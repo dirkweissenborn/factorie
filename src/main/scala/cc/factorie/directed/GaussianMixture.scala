@@ -13,32 +13,28 @@
 
 package cc.factorie.directed
 
-import cc.factorie._
-import scala.reflect.Manifest
-import scala.collection.mutable.{HashSet,HashMap}
-import scala.util.Random
-import cc.factorie.variable.{DoubleVariable, DiscreteVariable, DiscreteValue}
+import cc.factorie.variable._
 
-object GaussianMixture extends DirectedFamily4[DoubleVariable,Mixture[DoubleVariable],Mixture[DoubleVariable],DiscreteVariable] {
-  case class Factor(override val _1:DoubleVariable, override val _2:Mixture[DoubleVariable], override val _3:Mixture[DoubleVariable], override val _4:DiscreteVariable) extends super.Factor(_1, _2, _3, _4) {
+object GaussianMixture extends DirectedFamily4[DoubleVariable,Mixture[_ <: DoubleVariable],Mixture[_ <: DoubleVariable],DiscreteVar] {
+  case class Factor(override val _1:DoubleVariable, override val _2:Mixture[_ <: DoubleVariable], override val _3:Mixture[_ <: DoubleVariable], override val _4:DiscreteVar) extends super.Factor(_1, _2, _3, _4) {
     def gate = _4
-    override def logpr(child:Double, means:Seq[Double], variances:Seq[Double], z:DiscreteValue) = Gaussian.logpr(child, means(z.intValue), variances(z.intValue)) 
-    def pr(child:Double, means:Seq[Double], variances:Seq[Double], z:DiscreteValue) = Gaussian.pr(child, means(z.intValue), variances(z.intValue)) 
-    def sampledValue(means:Seq[Double], variances:Seq[Double], z:DiscreteValue)(implicit random: scala.util.Random): Double = Gaussian.sampledValue(means(z.intValue), variances(z.intValue))
+    override def logpr(child:Double, means:Seq[Double], variances:Seq[Double], z:DiscreteVar#Value) = Gaussian.logpr(child, means(z.intValue), variances(z.intValue))
+    def pr(child:Double, means:Seq[Double], variances:Seq[Double], z:DiscreteVar#Value) = Gaussian.pr(child, means(z.intValue), variances(z.intValue))
+    def sampledValue(means:Seq[Double], variances:Seq[Double], z:DiscreteVar#Value)(implicit random: scala.util.Random): Double = Gaussian.sampledValue(means(z.intValue), variances(z.intValue))
     def prChoosing(child:Double, means:Seq[Double], variances:Seq[Double], mixtureIndex:Int): Double = Gaussian.pr(child, means(mixtureIndex), variances(mixtureIndex)) 
     def sampledValueChoosing(means:Seq[Double], variances:Seq[Double], mixtureIndex:Int)(implicit random: scala.util.Random): Double = Gaussian.sampledValue(means(mixtureIndex), variances(mixtureIndex))
   }
-  def newFactor(a:DoubleVariable, b:Mixture[DoubleVariable], c:Mixture[DoubleVariable], d:DiscreteVariable) = Factor(a, b, c, d)
+  def newFactor(a:DoubleVariable, b:Mixture[_ <: DoubleVariable], c:Mixture[_ <: DoubleVariable], d:DiscreteVar) = Factor(a, b, c, d)
   
   // A different version in which all the components share the same variance
-  case class FactorSharedVariance(override val _1:DoubleVariable, override val _2:Mixture[DoubleVariable], override val _3:DoubleVariable, override val _4:DiscreteVariable) extends DirectedFactorWithStatistics4[DoubleVariable,Mixture[DoubleVariable],DoubleVariable,DiscreteVariable](_1, _2, _3, _4)  {
+  case class FactorSharedVariance(override val _1:DoubleVariable, override val _2:Mixture[_ <: DoubleVariable], override val _3:DoubleVariable, override val _4:DiscreteVar) extends DirectedFactorWithStatistics4[DoubleVariable,Mixture[_ <: DoubleVariable],DoubleVariable,DiscreteVar](_1, _2, _3, _4)  {
     def gate = _4
-    override def logpr(child:Double, means:Seq[Double], variance:Double, z:DiscreteValue) = Gaussian.logpr(child, means(z.intValue), variance) 
-    def pr(child:Double, means:Seq[Double], variance:Double, z:DiscreteValue) = Gaussian.pr(child, means(z.intValue), variance) 
-    def sampledValue(means:Seq[Double], variance:Double, z:DiscreteValue)(implicit random: scala.util.Random): Double = Gaussian.sampledValue(means(z.intValue), variance)
+    override def logpr(child:Double, means:Seq[Double], variance:Double, z:DiscreteVar#Value) = Gaussian.logpr(child, means(z.intValue), variance)
+    def pr(child:Double, means:Seq[Double], variance:Double, z:DiscreteVar#Value) = Gaussian.pr(child, means(z.intValue), variance)
+    def sampledValue(means:Seq[Double], variance:Double, z:DiscreteVar#Value)(implicit random: scala.util.Random): Double = Gaussian.sampledValue(means(z.intValue), variance)
     def prChoosing(child:Double, means:Seq[Double], variance:Double, mixtureIndex:Int): Double = Gaussian.pr(child, means(mixtureIndex), variance) 
     def sampledValueChoosing(means:Seq[Double], variance:Double, mixtureIndex:Int)(implicit random: scala.util.Random): Double = Gaussian.sampledValue(means(mixtureIndex), variance)
   }
-  def newFactor(a:DoubleVariable, b:Mixture[DoubleVariable], c:DoubleVariable, d:DiscreteVariable) = FactorSharedVariance(a, b, c ,d)
-  def apply(p1:Mixture[DoubleVariable], p2:DoubleVariable, p3:DiscreteVariable)(implicit random: scala.util.Random) = (c:DoubleVariable) => newFactor(c, p1, p2, p3)
+  def newFactor(a:DoubleVariable, b:Mixture[_ <: DoubleVariable], c:DoubleVariable, d:DiscreteVar) = FactorSharedVariance(a, b, c ,d)
+  def apply(p1:Mixture[_ <: DoubleVariable], p2:DoubleVariable, p3:DiscreteVar)(implicit random: scala.util.Random) = (c:DoubleVariable) => newFactor(c, p1, p2, p3)
 }

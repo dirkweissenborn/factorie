@@ -19,6 +19,7 @@ import cc.factorie.app.strings.Stopwords
 import cc.factorie.app.strings.alphaSegmenter
 import cc.factorie.directed._
 import cc.factorie.variable._
+import cc.factorie.app.topics.lda.LDA
 
 /**
  * LDA example using collapsed gibbs sampling; very flexible.
@@ -34,7 +35,7 @@ object SimpleLDA {
   val WordDomain = WordSeqDomain.elementDomain
   class Words(strings:Seq[String]) extends CategoricalSeqVariable(strings) {
     def domain = WordSeqDomain
-    def zs = model.parentFactor(this).asInstanceOf[PlatedCategoricalMixture.Factor]._3
+    def zs = model.parentFactor(this).asInstanceOf[PlatedDiscreteMixture.Factor]._3.asInstanceOf[Zs]
   }
   class Document(val file:String, val theta:ProportionsVar, strings:Seq[String]) extends Words(strings)
   val beta = MassesVariable.growableUniform(WordDomain, 0.1)
@@ -50,7 +51,7 @@ object SimpleLDA {
         val theta = ProportionsVariable.dense(numTopics) ~ Dirichlet(alphas)
         val tokens = alphaSegmenter(file).map(_.toLowerCase).filter(!Stopwords.contains(_)).toSeq
         val zs = new Zs(tokens.length) :~ PlatedDiscrete(theta)
-        documents += new Document(file.toString, theta, tokens) ~ PlatedCategoricalMixture(phis, zs)
+        documents += new Document(file.toString, theta, tokens) ~ PlatedDiscreteMixture(phis, zs)
       }
     }
 
@@ -62,5 +63,6 @@ object SimpleLDA {
     for (i <- 1 to 20) {
       for (doc <- documents) sampler.process(doc.zs)
    }
+
   }
 }

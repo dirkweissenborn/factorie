@@ -25,26 +25,26 @@ trait DiscreteGeneratingFactor extends DirectedFactor {
   //def prValue(s:StatisticsType, value:Int): Double
 }
 
-object Discrete extends DirectedFamily2[DiscreteVariable,ProportionsVariable] {
-  case class Factor(override val _1:DiscreteVariable, override val _2:ProportionsVariable) extends super.Factor(_1, _2) with DiscreteGeneratingFactor {
+object Discrete extends DirectedFamily2[DiscreteVar,ProportionsVariable] {
+  case class Factor(override val _1:DiscreteVar, override val _2:ProportionsVariable) extends super.Factor(_1, _2) with DiscreteGeneratingFactor {
     //def proportions: Proportions = _2 // Just an alias
-    def pr(child:DiscreteValue, proportions:Proportions) = proportions(child.intValue)
+    def pr(child:DiscreteVar#Value, proportions:Proportions) = proportions(child.intValue)
     override def pr: Double = _2.value.apply(_1.intValue)
     def prValue(p:Proportions, intValue:Int): Double = p.apply(intValue)
     override def prValue(intValue:Int): Double = _2.value.apply(intValue)
-    def sampledValue(p:Proportions)(implicit random: scala.util.Random): DiscreteValue = _1.domain.apply(p.sampleIndex)
-    override def sampledValue(implicit random: scala.util.Random): DiscreteValue = _1.domain.apply(_2.value.sampleIndex)
-    def maxIntValue(p:Proportions): Int = p.maxIndex // TODO 
+    def sampledValue(p:Proportions)(implicit random: scala.util.Random) = _1.domain.apply(p.sampleIndex).asInstanceOf[DiscreteVar#Value]
+    override def sampledValue(implicit random: scala.util.Random) = _1.domain.apply(_2.value.sampleIndex).asInstanceOf[DiscreteVar#Value]
+    def maxIntValue(p:Proportions): Int = p.maxIndex // TODO
     override def updateCollapsedParents(weight:Double): Boolean = { _2.value.masses.+=(_1.intValue, weight); true }
   }
-  def newFactor(a:DiscreteVariable, b:ProportionsVariable) = {
+  def newFactor(a:DiscreteVar, b:ProportionsVariable) = {
     if (a.domain.size != b.value.length) throw new Error("Discrete child domain size different from parent Proportions size.")
-    Factor(a, b) 
+    Factor(a, b)
   }
 }
 
-object MaximizeGeneratedDiscrete extends Maximize[Iterable[DiscreteVariable],Model] {
-  def apply(d:DiscreteVariable, model:Model): Unit = {
+object MaximizeGeneratedDiscrete extends Maximize[Iterable[MutableDiscreteVar],Model] {
+  def apply(d:MutableDiscreteVar, model:Model): Unit = {
     val dFactors = model.factors(d)
     require(dFactors.size == 1)
     dFactors.head match {
@@ -52,8 +52,8 @@ object MaximizeGeneratedDiscrete extends Maximize[Iterable[DiscreteVariable],Mod
       case _ => throw new Error("This Maximizer only handles factors of type Discrete.Factor.")
     }
   }
-  def apply(varying:Iterable[DiscreteVariable], model:Model): Unit = for (d <- varying) apply(d, model)
-  def infer[V<:DiscreteVariable](varying:V, model:Model): Option[SimpleDiscreteMarginal1[V]] = {
+  def apply(varying:Iterable[MutableDiscreteVar], model:Model): Unit = for (d <- varying) apply(d, model)
+  def infer[V<:MutableDiscreteVar](varying:V, model:Model): Option[SimpleDiscreteMarginal1[V]] = {
     val dFactors = model.factors(varying)
     require(dFactors.size == 1)
     dFactors.head match {
@@ -61,9 +61,9 @@ object MaximizeGeneratedDiscrete extends Maximize[Iterable[DiscreteVariable],Mod
       case _ => None
     }
   }
-  def infer(variables:Iterable[DiscreteVariable], model:Model, marginalizing:Summary): DiscreteSummary1[DiscreteVariable] = {
+  def infer(variables:Iterable[MutableDiscreteVar], model:Model, marginalizing:Summary): DiscreteSummary1[MutableDiscreteVar] = {
     if (marginalizing ne null) throw new Error("Multivariate case yet implemented.")
-    val result = new DiscreteSummary1[DiscreteVariable]
+    val result = new DiscreteSummary1[MutableDiscreteVar]
     for (v <- variables) infer(v, model).foreach(result += _)
     result
   }
