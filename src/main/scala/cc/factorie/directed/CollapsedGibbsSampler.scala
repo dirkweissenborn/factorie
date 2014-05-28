@@ -17,18 +17,25 @@ import cc.factorie.infer._
 import scala.collection.mutable.{ArrayBuffer, HashSet}
 import cc.factorie.variable._
 
-/** A GibbsSampler that can also collapse some Parameters. */
-class CollapsedGibbsSampler(collapse:Iterable[Var], val model:DirectedModel)(implicit val random: scala.util.Random) extends Sampler[Iterable[MutableVar]] {
+/**
+ *
+ * @param collapse variables that are being collapsed
+ * @param model
+ * @param samplingCandidates A function that assigns candidates for sampling to a variable (Optional).
+ *                           If it returns null for a variable, the whole domain is a possible candidates (default, can be slow).
+ *                           Does not work for SeqVars at the moment!
+ * @param random
+ */
+class CollapsedGibbsSampler(collapse:Iterable[Var], val model:DirectedModel, samplingCandidates: Var => Seq[Int] = _ => null)(implicit val random: scala.util.Random) extends Sampler[Iterable[MutableVar]] {
   var debug = false
   makeNewDiffList = false // override default in cc.factorie.Sampler
-  var temperature = 1.0 // TODO Currently ignored?
+  var temperature = 1.0
 
   private val collapsed = new HashSet[Var] ++ collapse
 
   // Initialize collapsed parameters specified in constructor
   val collapser = new Collapse(model)
   collapse.foreach(v => collapser(Seq(v)))
-  // TODO We should provide an interface that handlers can use to query whether or not a particular variable was collapsed or not?
 
   def isCollapsed(v:Var): Boolean = collapsed.contains(v)
   
@@ -40,8 +47,6 @@ class CollapsedGibbsSampler(collapse:Iterable[Var], val model:DirectedModel)(imp
         val childFactors = model.childFactors(v)
         val parentFactor = model.getParentFactor(v)
 
-        val domainSize = v.domain.size
-
         val collapsedFactors = ArrayBuffer[DirectedFactor]()
         collapsedFactors ++= childFactors.filter(f => f.parents.exists(isCollapsed))
         if(parentFactor.isDefined && parentFactor.get.parents.exists(isCollapsed))
@@ -50,19 +55,25 @@ class CollapsedGibbsSampler(collapse:Iterable[Var], val model:DirectedModel)(imp
         collapsedFactors.foreach(_.updateCollapsedParents(-1.0))
 
         var sum = 0.0
-        val distribution = Array.ofDim[Double](domainSize)
-        (0 until domainSize).foreach { value1 =>
+
+        var candidates = samplingCandidates(v)
+        if(candidates == null)
+          candidates = 0 until v.domain.size
+
+        val distribution = Array.ofDim[Double](candidates.size)
+        (0 until distribution.length).foreach { idx =>
+          val value1 = candidates(idx)
           v.set(value1)(null)
           val pValue = parentFactor.map(_.pr).getOrElse(1.0)
           val cValue = childFactors.foldLeft(1.0)(_ * _.pr)
 
           val pr = pValue * cValue
           sum += pr
-          distribution(value1) = pr
+          distribution(idx) = pr
         }
 
-        if (sum == 0) v.set(random.nextInt(domainSize))(null)
-        else v.set(cc.factorie.maths.nextDiscrete(distribution, sum)(random))(null)
+        if (sum == 0) v.set(candidates(random.nextInt(distribution.length)))(null)
+        else v.set(candidates(cc.factorie.maths.nextDiscrete(distribution, sum)(random)))(null)
 
         collapsedFactors.foreach(_.updateCollapsedParents(1.0))
 
