@@ -14,11 +14,12 @@
 package cc.factorie.directed
 
 import cc.factorie._
-import cc.factorie.variable.{DoubleVar, DoubleVariable, DiscreteVariable, DiscreteValue}
+import cc.factorie.variable._
+import cc.factorie.variable.DiscreteVariable
 
 /** Beta distribution.
     http://en.wikipedia.org/wiki/Beta_distribution */
-object Beta extends DirectedFamily3[DoubleVar,DoubleVar,DoubleVar] { self =>
+object Beta extends DirectedFamily3[DoubleVariable,DoubleVariable,DoubleVariable] { self =>
   def mode(alpha:Double, beta:Double): Double = 
     if (alpha > 1 && beta > 1) (alpha - 1) / (alpha + beta - 2)
     else Double.NaN
@@ -38,24 +39,25 @@ object Beta extends DirectedFamily3[DoubleVar,DoubleVar,DoubleVar] { self =>
     x / (x + y)
   }
   // TODO Consider making this not a case class, but Factor1 be a case class?
-  case class Factor(override val _1:DoubleVar, override val _2:DoubleVar, override val _3:DoubleVar) extends super.Factor(_1, _2, _3) {
+  case class Factor(override val _1:DoubleVariable, override val _2:DoubleVariable, override val _3:DoubleVariable) extends super.Factor(_1, _2, _3) {
     def pr(child:Double, alpha:Double, beta:Double): Double = self.pr(child, alpha, beta)
     def sampledValue(alpha:Double, beta:Double)(implicit random: scala.util.Random): Double = self.sampledValue(alpha, beta)
   }
-  def newFactor(_1:DoubleVar, _2:DoubleVar, _3:DoubleVar) = Factor(_1, _2, _3)
+  def newFactor(_1:DoubleVariable, _2:DoubleVariable, _3:DoubleVariable) = Factor(_1, _2, _3)
 }
 
 
-object BetaMixture extends DirectedFamily4[DoubleVariable,Mixture[DoubleVariable],Mixture[DoubleVariable],DiscreteVariable] {
+object BetaMixture extends DirectedFamily4[DoubleVariable,Mixture[DoubleVariable],Mixture[DoubleVariable],DiscreteVar] {
   type Seq[+A] = scala.collection.Seq[A]
-  case class Factor(override val _1:DoubleVariable, override val _2:Mixture[DoubleVariable], override val _3:Mixture[DoubleVariable], override val _4:DiscreteVariable) extends super.Factor(_1, _2, _3, _4) {
+  case class Factor(override val _1:DoubleVariable, override val _2:Mixture[DoubleVariable], override val _3:Mixture[DoubleVariable], override val _4:DiscreteVar) extends super.Factor(_1, _2, _3, _4) {
     def gate = _4
-    def pr(child:Double, alpha:Seq[Double], beta:Seq[Double], z:DiscreteValue) = Beta.pr(child, alpha(z.intValue), beta(z.intValue)) 
-    def sampledValue(alpha:Seq[Double], beta:Seq[Double], z:DiscreteValue)(implicit random: scala.util.Random): Double = Beta.sampledValue(alpha(z.intValue), beta(z.intValue))
+    def pr(child:Double, alpha:Seq[Double], beta:Seq[Double], z:DiscreteVar#Value) = Beta.pr(child, alpha(z.intValue), beta(z.intValue))
+    def sampledValue(alpha:Seq[Double], beta:Seq[Double], z:DiscreteVar#Value)(implicit random: scala.util.Random): Double = Beta.sampledValue(alpha(z.intValue), beta(z.intValue))
     def prChoosing(child:Double, alpha:Seq[Double], beta:Seq[Double], z:Int): Double = Beta.pr(child, alpha(z), beta(z)) 
     def sampledValueChoosing(alpha:Seq[Double], beta:Seq[Double], z:Int)(implicit random: scala.util.Random): Double = Beta.sampledValue(alpha(z), beta(z))
+
   }
-  def newFactor(a:DoubleVariable, b:Mixture[DoubleVariable], c:Mixture[DoubleVariable], d:DiscreteVariable) = Factor(a, b, c, d)
+  def newFactor(a:DoubleVariable, b:Mixture[DoubleVariable], c:Mixture[DoubleVariable], d:DiscreteVar) = Factor(a, b, c, d)
 }
 
 object MaximizeBetaByMomentMatching {

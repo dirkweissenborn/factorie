@@ -29,7 +29,7 @@ object Dirichlet extends DirectedFamily2[ProportionsVariable,MassesVariable] {
     assert(result == result, "alpha="+alpha.toSeq+" p="+value.toSeq) // NaN?
     result
   }
-  def sampledValue(masses:Masses, children:Iterable[DiscreteVar] = Nil)(implicit random: scala.util.Random): Proportions = new DenseProportions1(sampledArray(masses, children))
+  def sampledValue(masses:Masses, children:Iterable[DiscreteVar] = Nil)(implicit random: scala.util.Random) = new DenseProportions1(sampledArray(masses, children))
   // TODO Make a more general argument type than Iterable[DiscreteVar], like Iterable[Int] (but I'm concerned about boxing)
   def sampledArray(alpha:Masses, children:Iterable[DiscreteVar] = Nil)(implicit random: scala.util.Random): Array[Double] = {
     var norm = 0.0
@@ -47,8 +47,8 @@ object Dirichlet extends DirectedFamily2[ProportionsVariable,MassesVariable] {
   case class Factor(override val _1:ProportionsVariable, override val _2:MassesVariable) extends super.Factor(_1, _2) {
     def pr(p:Proportions, m:Masses) = self.pr(p, m)
     override def pr: Double = self.pr(_1.value, _2.value)
-    def sampledValue(masses:Masses)(implicit random: scala.util.Random): Proportions = self.sampledValue(masses, Nil)
-    override def sampledValue(implicit random: scala.util.Random): Proportions = self.sampledValue(_2.value, Nil)
+    def sampledValue(masses:Masses)(implicit random: scala.util.Random) = self.sampledValue(masses, Nil)
+    override def sampledValue(implicit random: scala.util.Random) = self.sampledValue(_2.value, Nil)
     override def updateCollapsedChild(): Boolean = { _1.value.+=(_2.value); true }
   }
   def newFactor(a:ProportionsVariable, b:MassesVariable) = Factor(a, b)
@@ -180,8 +180,8 @@ object LearnDirichletUsingFrequencyHistograms {
 }
 
 /** Alternative style of Dirichlet parameterized by 2 parents (mean,precision) rather than 1 (masses). */
-object Dirichlet2 extends DirectedFamily3[ProportionsVar,ProportionsVar,RealVar] {
-  def newFactor(a:ProportionsVar, b:ProportionsVar, c:RealVar) = throw new Error("Not yet implemented")
+object Dirichlet2 extends DirectedFamily3[ProportionsVariable,ProportionsVariable,RealVar] {
+  def newFactor(a:ProportionsVariable, b:ProportionsVariable, c:RealVar) = throw new Error("Not yet implemented")
 }
   
 

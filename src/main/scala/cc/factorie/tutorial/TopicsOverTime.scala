@@ -79,7 +79,7 @@ object TopicsOverTime {
         val theta = ProportionsVariable.sortedSparseCounts(numTopics) ~ Dirichlet(alphas)
         val tokens = alphaSegmenter(file).map(_.toLowerCase).filter(!stopwords.contains(_)).toSeq
         val zs = new Zs(tokens.length) :~ PlatedDiscrete(theta)
-        val doc = new Document(file.toString, theta, zs, tokens) ~ PlatedCategoricalMixture(phis, zs)
+        val doc = new Document(file.toString, theta, zs, tokens) ~ PlatedDiscreteMixture(phis, zs)
         doc.time = file.lastModified
         documents += doc
       }

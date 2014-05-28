@@ -32,6 +32,7 @@ trait DirectedFactor extends Factor {
   /** Update sufficient statistics in collapsed parents, using current value of child, with weight.  Return false on failure. */
   // TODO Consider passing a second argument which is the value of the child to use in the update
   def updateCollapsedParents(weight:Double): Boolean = throw new Error(factorName+": Collapsing parent not implemented in " + this.getClass.getName)
+  def updateCollapsedParentsForIdx(weight:Double,idx:Int): Boolean = throw new Error(factorName+": Collapsing parent (maybe parent is not a SeqVar) at specified idx not implemented in " + this.getClass.getName)
   def updateCollapsedChild(): Boolean = throw new Error(factorName+": Collapsing child not implemented.")
   def resetCollapsedChild(): Boolean = throw new Error(factorName+": Resetting child not implemented.")
 }
