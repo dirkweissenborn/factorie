@@ -19,7 +19,9 @@ import cc.factorie.la.{DenseTensor2, Tensor2, DenseTensor1, Tensor1}
 import cc.factorie.directed._
 import cc.factorie.variable._
 import cc.factorie.infer.InferByMeanField
-import cc.factorie.directed.DirectedTypeHelpers.{MutableTensorVarTensor2, MutableTensorVarTensor1}
+import cc.factorie.directed.factor._
+import DirectedTypeHelpers.{MutableTensorVarTensor2, MutableTensorVarTensor1}
+import cc.factorie.directed.factor.{Mixture, GaussianMixture, MaximizeGaussianMean, Discrete}
 
 
 object GaussianMixtureDemo {
@@ -70,7 +72,7 @@ object MultivariateGaussianMixtureDemo {
     val mixtureProportions = ProportionsVariable.uniform(numComponents)
     // Generate some data
     val data = for (i <- 1 to 1000) yield {
-      val z = new Z :~ directed.Discrete(mixtureProportions)
+      val z = new Z :~ Discrete(mixtureProportions)
       new TensorVariable[Tensor1] :~ MultivariateGaussianMixture(meanComponents, varianceComponents, z)
     }
     // A convenience function for getting the Z for a particular DoubleVar data variable x

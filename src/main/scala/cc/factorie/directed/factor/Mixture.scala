@@ -11,11 +11,10 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-package cc.factorie.directed
+package cc.factorie.directed.factor
 
-import cc.factorie._
-import scala.collection.mutable.{ArrayBuffer,Stack}
 import cc.factorie.variable._
+import cc.factorie.directed.MutableDirectedModel
 
 //trait GateVar extends MutableDiscreteVar
 //abstract class GateVariable(initial:Int) extends DiscreteVariable(initial) with GateVar {}
@@ -26,6 +25,7 @@ import cc.factorie.variable._
 trait MixtureFactor extends DirectedFactor {
   //type ChildType <: MixtureGeneratedVar
   def gate: DiscreteVar
+
   //def prChoosing(s:StatisticsType, mixtureIndex:Int): Double
   //def prChoosing(mixtureIndex:Int): Double = prChoosing(statistics, mixtureIndex)
   //def logprChoosing(s:StatisticsType, mixtureIndex:Int): Double = math.log(prChoosing(s, mixtureIndex))
@@ -43,22 +43,30 @@ trait MixtureFactor extends DirectedFactor {
 class MixtureDomain[+V] extends Domain {
   type Value <: scala.collection.Seq[V]
 }
+
 object MixtureDomain extends MixtureDomain[Any]
+
 // NOTE Was Mixture[+P...]
-class Mixture[P<:Var](val components:Seq[P])(implicit val model: MutableDirectedModel, implicit val random: scala.util.Random) extends scala.collection.Seq[P] with VarWithDeterministicValue
-{
+class Mixture[P <: Var](val components: Seq[P])(implicit val model: MutableDirectedModel, implicit val random: scala.util.Random) extends scala.collection.Seq[P] with VarWithDeterministicValue {
   type Value = scala.collection.Seq[P#Value]
   /* A Mixture is a deterministic function of its parents.  
      This fact is examined in DirectedModel.factors, causing factors(mixtureComponent)
      to return not only this Mixture but also all the children of this Mixture. */
   //type Value <: scala.collection.Seq[P#Value]
-  this ~ Mixture() // This will make this a child of each of the mixture components.
+  this ~ Mixture()
+
+  // This will make this a child of each of the mixture components.
   def domain = MixtureDomain.asInstanceOf[MixtureDomain[P#Value]]
-  def apply(i:Int) = components(i)
+
+  def apply(i: Int) = components(i)
+
   def length = components.length
+
   def iterator = components.iterator
+
   def value = this.map(_.value)
-  // TODO Note that if the Mixture grows, new component Parameters will not be properly get this childFactor 
+
+  // TODO Note that if the Mixture grows, new component Parameters will not be properly get this childFactor
   //val parentFactors = components.map(c => { val f = new MixtureComponent.Factor(this, c); c.addChildFactor(f); f })
   //parentFactor = new MixtureComponent.Factor(this, new SeqParameterVars(components)) // TODO Look at this again carefully
   //components.foreach(p => p.addChildFactor(parentFactor)) 
@@ -89,22 +97,27 @@ class Mixture[P<:Var](val components:Seq[P])(implicit val model: MutableDirected
 }
 
 object Mixture extends DirectedFamily1[Mixture[Var]] {
-  def apply[P<:Var](n:Int)(constructor: =>P)(implicit model: MutableDirectedModel, random: scala.util.Random): Mixture[P] = new Mixture[P](for (i <- 1 to n) yield constructor) // TODO Consider Seq.fill instead
-  case class Factor(override val _1:Mixture[Var]) extends super.Factor(_1) {
+  def apply[P <: Var](n: Int)(constructor: => P)(implicit model: MutableDirectedModel, random: scala.util.Random): Mixture[P] = new Mixture[P](for (i <- 1 to n) yield constructor)
+
+  // TODO Consider Seq.fill instead
+  case class Factor(override val _1: Mixture[Var]) extends super.Factor(_1) {
     /** Even though they are the contents of the child, the parents are each of the mixture components. */
     override def parents: Seq[Var] = _1.components
-    def pr(v:C#Value) = 1.0
+
+    def pr(v: C#Value) = 1.0
+
     def sampledValue(implicit random: scala.util.Random): ChildType#Value = throw new Error("Cannot sample a Mixture")
-    override def updateCollapsedParents(weight:Double): Boolean = {
+
+    override def updateCollapsedParents(weight: Double): Boolean = {
       throw new Error("Not yet implemented.")
       //  TODO this is inefficient because it will loop through all children of the Mixture for each Mixture component
       //for (f2 <- _1.childFactorsOf(_2)) f2.updateCollapsedParents(weight) // TODO Consider collapsed Gate
       true
     }
   }
-  def newFactor(a:Mixture[Var]) = Factor(a)
-}
 
+  def newFactor(a: Mixture[Var]) = Factor(a)
+}
 
 
 /*

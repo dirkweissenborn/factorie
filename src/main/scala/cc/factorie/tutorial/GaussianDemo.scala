@@ -15,9 +15,9 @@ package cc.factorie.tutorial
 import cc.factorie._
 import cc.factorie.directed._
 import la.{DenseTensor2, Tensor2, DenseTensor1, Tensor1}
-import cc.factorie.directed.{MaximizeMultivariateGaussianCovariance, MaximizeMultivariateGaussianMean, MultivariateGaussian, Gaussian}
 import cc.factorie.variable.{TensorVariable, DoubleVariable}
 import cc.factorie.infer.Maximize
+import cc.factorie.directed.factor.{MaximizeMultivariateGaussianCovariance, MaximizeMultivariateGaussianMean, MultivariateGaussian, Gaussian}
 
 object GaussianDemo {
   def main(args: Array[String]): Unit = {

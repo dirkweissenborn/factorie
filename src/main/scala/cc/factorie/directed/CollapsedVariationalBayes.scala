@@ -13,67 +13,73 @@
 
 package cc.factorie.directed
 
-import cc.factorie._
-import scala.collection.mutable.{HashMap, HashSet, PriorityQueue, ArrayBuffer}
+import scala.collection.mutable.ArrayBuffer
 import cc.factorie.variable._
 import cc.factorie.model.Factor
 import cc.factorie.infer.{DiscreteSeqMarginal, Summary1}
+import cc.factorie.directed.factor.{PlatedDiscreteMixture, PlatedDiscrete}
 
 //import cc.factorie.la.ArrayLA.Implicits._
 
-class CollapsedVariationalBayes(collapse:Iterable[Var], marginalize:Iterable[Var], model:DirectedModel) {
+class CollapsedVariationalBayes(collapse: Iterable[Var], marginalize: Iterable[Var], model: DirectedModel) {
   val handlers = new ArrayBuffer[CollapsedVariationalBayesHandler]
+
   //def defaultHandlers = List(GeneratedVariableCollapsedVariationalBayesHandler, MixtureChoiceCollapsedVariationalBayesHandler)
   def defaultHandlers = throw new Error("Not yet implemented")
+
   handlers ++= defaultHandlers
 
-//  private val _c = new HashMap[Variable,Variable]
-//  private val _q = new HashMap[Variable,Variable]
-//  def collapsedMap = _c
-//  def qMap = _q
-//  //collapse.foreach(v => _c(v) = v.newCollapsed)
-//  val collapser = new Collapse(model)
-//  collapse.foreach(v => collapser(Seq(v)))
-//  marginalize.foreach(v => _q(v) = v.newQ)
-//  //def collapsed[V<:CollapsibleParameter](v:V) = _c(v).asInstanceOf[V#CollapsedType]
-//  def q[V<:Variable with QDistribution](v:V) = _q(v).asInstanceOf[V#QType]
-//  def collapsedOrSelf(v:Variable): Variable = _c.getOrElse(v, v)
-//  def collapsedp2[P<:Variable](v:P): P = _c.getOrElse(v, v).asInstanceOf[P]
-//  def collapsedOrNull(v:Variable): Variable = _c.getOrElse(v, null.asInstanceOf[Variable])
-//  def qp(v:Variable) = _q.getOrElse(v, v)
-//  def setMaxMarginals(implicit d:DiffList = null): Unit = {
-//    throw new Error("Not yet implemented")
-//  }
-//  def children(p:Variable): Iterable[Variable] = throw new Error
+  //  private val _c = new HashMap[Variable,Variable]
+  //  private val _q = new HashMap[Variable,Variable]
+  //  def collapsedMap = _c
+  //  def qMap = _q
+  //  //collapse.foreach(v => _c(v) = v.newCollapsed)
+  //  val collapser = new Collapse(model)
+  //  collapse.foreach(v => collapser(Seq(v)))
+  //  marginalize.foreach(v => _q(v) = v.newQ)
+  //  //def collapsed[V<:CollapsibleParameter](v:V) = _c(v).asInstanceOf[V#CollapsedType]
+  //  def q[V<:Variable with QDistribution](v:V) = _q(v).asInstanceOf[V#QType]
+  //  def collapsedOrSelf(v:Variable): Variable = _c.getOrElse(v, v)
+  //  def collapsedp2[P<:Variable](v:P): P = _c.getOrElse(v, v).asInstanceOf[P]
+  //  def collapsedOrNull(v:Variable): Variable = _c.getOrElse(v, null.asInstanceOf[Variable])
+  //  def qp(v:Variable) = _q.getOrElse(v, v)
+  //  def setMaxMarginals(implicit d:DiffList = null): Unit = {
+  //    throw new Error("Not yet implemented")
+  //  }
+  //  def children(p:Variable): Iterable[Variable] = throw new Error
 
-  def process(v:MutableVar): DiffList = {
+  def process(v: MutableVar): DiffList = {
     //assert(!v.isInstanceOf[CollapsedVar]) // We should never be processing a CollapsedVariable
     // Get factors, in sorted order of the their classname
-    val factors = model.factors(Seq(v)).toSeq.sortWith((f1:Factor,f2:Factor) => f1.factorName < f2.factorName)
+    val factors = model.factors(Seq(v)).toSeq.sortWith((f1: Factor, f2: Factor) => f1.factorName < f2.factorName)
     var done = false
     val handlerIterator = handlers.iterator
     val d = new DiffList
     while (!done && handlerIterator.hasNext) {
       done = handlerIterator.next().process(v, factors, this)(d)
     }
-    if (!done) throw new Error("CollapsedVariationalBayes: No sampling method found for variable "+v+" with factors "+factors.map(_.factorName).mkString("List(",",",")"))
+    if (!done) throw new Error("CollapsedVariationalBayes: No sampling method found for variable " + v + " with factors " + factors.map(_.factorName).mkString("List(", ",", ")"))
     d
   }
 }
 
 trait CollapsedVariationalBayesHandler {
-  def process(v:Var, factors:Seq[Factor], cvb:CollapsedVariationalBayes)(implicit d:DiffList): Boolean
+  def process(v: Var, factors: Seq[Factor], cvb: CollapsedVariationalBayes)(implicit d: DiffList): Boolean
 }
 
 
 // Collapses LDA's theta, but not phi; gets marginals for Zs
-class PlatedGateCollapsedVariationalBayes(val model:DirectedModel, val summary:Summary1[DiscreteSeqVariable,DiscreteSeqMarginal[DiscreteSeqVariable]] = new Summary1[DiscreteSeqVariable,DiscreteSeqMarginal[DiscreteSeqVariable]]) {
-  
-  def infer(gates:DiscreteSeqVariable, iterations:Int): Unit = {
+class PlatedGateCollapsedVariationalBayes(val model: DirectedModel, val summary: Summary1[DiscreteSeqVariable, DiscreteSeqMarginal[DiscreteSeqVariable]] = new Summary1[DiscreteSeqVariable, DiscreteSeqMarginal[DiscreteSeqVariable]]) {
+
+  def infer(gates: DiscreteSeqVariable, iterations: Int): Unit = {
     val factors = model.factors(gates)
-    require(factors.size == 2) 
-    val gFactor = factors.collectFirst({case f:PlatedDiscrete.Factor => f}).get
-    val mFactor = factors.collectFirst({case f:PlatedDiscreteMixture.Factor => f}).get
+    require(factors.size == 2)
+    val gFactor = factors.collectFirst({
+      case f: PlatedDiscrete.Factor => f
+    }).get
+    val mFactor = factors.collectFirst({
+      case f: PlatedDiscreteMixture.Factor => f
+    }).get
     require(gFactor._1 == mFactor._3) // both should equal gates
     val gateDomainSize = gates.domain.elementDomain.size
     val alpha1 = 1.0 / gateDomainSize // + 0.1 for smoothing?
@@ -106,7 +112,8 @@ class PlatedGateCollapsedVariationalBayes(val model:DirectedModel, val summary:S
       }
     }
   }
-  def maximize(gates:DiscreteSeqVariable): Unit = {
+
+  def maximize(gates: DiscreteSeqVariable): Unit = {
     val gatesMarginal = summary.marginal(gates)
     var i = 0
     while (i < gates.length) {
@@ -115,7 +122,6 @@ class PlatedGateCollapsedVariationalBayes(val model:DirectedModel, val summary:S
     }
   }
 }
-
 
 
 /*

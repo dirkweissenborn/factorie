@@ -11,11 +11,8 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-package cc.factorie.directed
+package cc.factorie.directed.factor
 
-import cc.factorie._
-import cc.factorie.util.DoubleSeq
-import scala.collection.mutable.ArrayBuffer
 import cc.factorie.variable._
 
 /*
@@ -25,25 +22,35 @@ trait PlatedDiscreteGeneratingFactor extends DirectedFactor {
 }
 */
 
-object PlatedDiscrete extends DirectedFamily2[DiscreteSeqVar,ProportionsVariable] {
+object PlatedDiscrete extends DirectedFamily2[DiscreteSeqVar, ProportionsVariable] {
   self =>
-  def pr(ds:DiscreteSeqVar#Value, p:Proportions): Double = ds.foldLeft(1.0)((acc,dv) => acc * p(dv.intValue))
-  def logpr(ds:IndexedSeq[DiscreteValue], p:Proportions): Double = ds.foldLeft(0.0)((acc,dv) => acc + math.log(p(dv.intValue)))
-  def sampledValue(d:DiscreteDomain, length:Int, p:Proportions)(implicit random: scala.util.Random) =
+  def pr(ds: DiscreteSeqVar#Value, p: Proportions): Double = ds.foldLeft(1.0)((acc, dv) => acc * p(dv.intValue))
+
+  def logpr(ds: IndexedSeq[DiscreteValue], p: Proportions): Double = ds.foldLeft(0.0)((acc, dv) => acc + math.log(p(dv.intValue)))
+
+  def sampledValue(d: DiscreteDomain, length: Int, p: Proportions)(implicit random: scala.util.Random) =
     Vector.fill(length)(d.apply(p.sampleIndex))
-  case class Factor(override val _1:DiscreteSeqVar, override val _2:ProportionsVariable) extends super.Factor(_1, _2) {
-    def pr(child:DiscreteSeqVar#Value, p:Proportions): Double = self.pr(child, p)
+
+  case class Factor(override val _1: DiscreteSeqVar, override val _2: ProportionsVariable) extends super.Factor(_1, _2) {
+    def pr(child: DiscreteSeqVar#Value, p: Proportions): Double = self.pr(child, p)
+
     //override def logpr(s:Statistics): Double = self.logpr(s._1, s._2)
-    override def sampledValue(implicit random: scala.util.Random): DiscreteSeqVar#Value = self.sampledValue(_1.domain.elementDomain, _1.length, _2.value).asInstanceOf[DiscreteSeqVar#Value] // Avoid creating a Statistics
-    def sampledValue(p:Proportions)(implicit random: scala.util.Random) = {
+    override def sampledValue(implicit random: scala.util.Random): DiscreteSeqVar#Value = self.sampledValue(_1.domain.elementDomain, _1.length, _2.value).asInstanceOf[DiscreteSeqVar#Value]
+
+    // Avoid creating a Statistics
+    def sampledValue(p: Proportions)(implicit random: scala.util.Random) = {
       if (_1.length == 0) IndexedSeq[DiscreteValue]()
       else self.sampledValue(_1.domain.elementDomain, _1.length, p)
     }.asInstanceOf[DiscreteSeqVar#Value]
 
-    override def updateCollapsedParentsForIdx(weight:Double,idx:Int): Boolean = { _2.incrementMasses(_1(idx).intValue, weight)(null); true }
-    override def updateCollapsedParents(weight: Double) =  super.updateCollapsedParents(weight)
+    override def updateCollapsedParentsForIdx(weight: Double, idx: Int): Boolean = {
+      _2.incrementMasses(_1(idx).intValue, weight)(null); true
+    }
+
+    override def updateCollapsedParents(weight: Double) = super.updateCollapsedParents(weight)
   }
-  def newFactor(a:DiscreteSeqVar, b:ProportionsVariable) = Factor(a, b)
+
+  def newFactor(a: DiscreteSeqVar, b: ProportionsVariable) = Factor(a, b)
 }
 
 /*

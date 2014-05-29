@@ -21,6 +21,7 @@ import scala.util.Random
 import cc.factorie.directed._
 import cc.factorie.infer._
 import MassesVariable._
+import cc.factorie.directed.factor._
 
 // Proportions Values
 

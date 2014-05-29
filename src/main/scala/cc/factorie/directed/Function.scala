@@ -13,32 +13,45 @@
 
 package cc.factorie.directed
 
-import cc.factorie._
 import cc.factorie.variable.{VarWithDeterministicValue, DoubleVar}
+import cc.factorie.directed.factor.{DirectedFamily3, DirectedFactor}
 
 trait DeterministicFunction extends VarWithDeterministicValue {
   //overrride var parentFactor: DirectedFactor = null
   //override def isDeterministic = true
 }
+
 trait DoubleFunction extends DeterministicFunction with DoubleVar
 
-class DoubleSum(a:DoubleVar, b:DoubleVar)(implicit val model: MutableDirectedModel) extends DeterministicFunction with DoubleVar {
+class DoubleSum(a: DoubleVar, b: DoubleVar)(implicit val model: MutableDirectedModel) extends DeterministicFunction with DoubleVar {
   this ~ DoubleSum2(a, b)
+
   def doubleValue = a.doubleValue + b.doubleValue
 }
 
 trait FunctionFactor extends DirectedFactor {
-  type ValueType 
+  type ValueType
+
   /*override*/ def isDeterministic = true
+
   def value: ValueType
 }
-trait DoubleFunctionFactor extends FunctionFactor { type ValueType = Double }
-object DoubleSum2 extends DirectedFamily3[DoubleFunction,DoubleVar,DoubleVar] {
-  case class Factor(override val _1:DoubleFunction, override val _2:DoubleVar, override val _3:DoubleVar) extends super.Factor(_1, _2, _3) {
-    def pr(child:Double, p1:Double, p2:Double): Double = if (child == p1 + p2) 1.0 else 0.0
-    def sampledValue(p1:Double, p2:Double)(implicit random: scala.util.Random=null): Double = p1 + p2
-    def value: Double = _2.doubleValue + _3.doubleValue 
-  }
-  def newFactor(_1:DoubleFunction, _2:DoubleVar, _3:DoubleVar) = Factor(_1, _2, _3)
+
+trait DoubleFunctionFactor extends FunctionFactor {
+  type ValueType = Double
 }
+
+object DoubleSum2 extends DirectedFamily3[DoubleFunction, DoubleVar, DoubleVar] {
+
+  case class Factor(override val _1: DoubleFunction, override val _2: DoubleVar, override val _3: DoubleVar) extends super.Factor(_1, _2, _3) {
+    def pr(child: Double, p1: Double, p2: Double): Double = if (child == p1 + p2) 1.0 else 0.0
+
+    def sampledValue(p1: Double, p2: Double)(implicit random: scala.util.Random = null): Double = p1 + p2
+
+    def value: Double = _2.doubleValue + _3.doubleValue
+  }
+
+  def newFactor(_1: DoubleFunction, _2: DoubleVar, _3: DoubleVar) = Factor(_1, _2, _3)
+}
+
 // val a = new RealFunction ~ RealSum2(b, c)
