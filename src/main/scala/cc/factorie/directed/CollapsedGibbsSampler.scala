@@ -28,7 +28,7 @@ import cc.factorie.variable._
  */
 class CollapsedGibbsSampler(collapse:Iterable[Var], val model:DirectedModel, samplingCandidates: Var => Seq[Int] = _ => null)(implicit val random: scala.util.Random) extends Sampler[Iterable[MutableVar]] {
   var debug = false
-  makeNewDiffList = false // override default in cc.factorie.Sampler
+  makeNewDiffList = false
   var temperature = 1.0
 
   private val collapsed = new HashSet[Var] ++ collapse
@@ -99,7 +99,7 @@ class CollapsedGibbsSampler(collapse:Iterable[Var], val model:DirectedModel, sam
 
             val pValue = parentFactor match {
               //faster by not calculating the whole probability here, because only the variable at idx changes
-              case Some(f:PlatedDiscreteMixture.Factor) => f._2(f._1(idx).intValue).value(value1)
+              case Some(f:PlatedDiscreteMixture.Factor) => f._2(f._3(idx).intValue).value(value1)
               case Some(f:PlatedDiscrete.Factor) => f._2.value(value1)
               //Defaults that could potentially be very slow if we are sampling a SeqVar (e.g., above two cases)
               case Some(f:DirectedFactor) => f.pr
