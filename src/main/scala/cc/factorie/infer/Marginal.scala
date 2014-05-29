@@ -14,10 +14,10 @@
 package cc.factorie.infer
 
 import cc.factorie.la._
-import cc.factorie.directed.{MultivariateGaussian, Gaussian}
 import cc.factorie.variable._
 import cc.factorie.model._
-import cc.factorie.directed.DirectedTypeHelpers.MutableTensorVarTensor1
+import cc.factorie.directed.factor.{MultivariateGaussian, DirectedTypeHelpers, Gaussian}
+import DirectedTypeHelpers.MutableTensorVarTensor1
 
 /** Stores a marginal distribution containing a joint distribution over a set of variables.
     See also Summary, which stores a collection of Marginals.
