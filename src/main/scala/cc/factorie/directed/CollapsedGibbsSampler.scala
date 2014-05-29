@@ -17,6 +17,7 @@ import cc.factorie.infer._
 import scala.collection.mutable.{ArrayBuffer, HashSet}
 import cc.factorie.variable._
 import cc.factorie.directed.factor.{PlatedDiscreteMixture, PlatedDiscrete, DirectedFactor}
+import scala.collection.mutable
 
 /**
  *
@@ -24,7 +25,7 @@ import cc.factorie.directed.factor.{PlatedDiscreteMixture, PlatedDiscrete, Direc
  * @param model
  * @param samplingCandidates A function that assigns candidates for sampling to a variable (Optional).
  *                           If it returns null for a variable, the whole domain is a possible candidates (default, can be slow).
- *                           Does not work for SeqVars at the moment!
+ *                           For SeqVars this function should return candidates for the elements of the SeqVars!
  * @param random
  */
 class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, samplingCandidates: Var => Seq[Int] = _ => null)(implicit val random: scala.util.Random) extends Sampler[Iterable[MutableVar]] {
@@ -43,7 +44,16 @@ class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, s
   def process1(vs: Iterable[MutableVar]): DiffList = {
     val d = newDiffList
 
+    //Cache for counts; important to make for example PlatedMultinomialFromSeq.Factor sampling faster.
+    // Otherwise iterating over the whole SeqVar would be necessary for each sampling candidate
+    val countsCache = mutable.HashMap[DiscreteSeqVar,mutable.HashMap[Int,Double]]()
+    def getCount(variable:DiscreteSeqVar, candidate:Int) =
+      countsCache.getOrElseUpdate(variable,
+        variable.foldLeft(mutable.HashMap[Int, Double]()){ case (counts, value) => counts += value.intValue -> (1.0 + counts.getOrElse(value.intValue, 0.0)); counts}
+      ).getOrElse(candidate,0.0)
+
     vs.foreach {
+      //Different sampling for Vars and SeqVars
       case v: MutableDiscreteVar =>
         val childFactors = model.childFactors(v)
         val parentFactor = model.getParentFactor(v)
@@ -64,9 +74,13 @@ class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, s
         val distribution = Array.ofDim[Double](candidates.size)
         (0 until distribution.length).foreach {
           idx =>
-            val value1 = candidates(idx)
-            v.set(value1)(null)
-            val pValue = parentFactor.map(_.pr).getOrElse(1.0)
+            val candidate = candidates(idx)
+            v.set(candidate)(null)
+            val pValue = parentFactor match {
+              case Some(f:MultinomialFromSeq.Factor) => getCount(f._2,candidate) //efficiently cache element counts of parent
+              case Some(f:DirectedFactor) => f.pr
+              case None => 1.0
+            }
             val cValue = childFactors.foldLeft(1.0)(_ * _.pr)
 
             val pr = pValue * cValue
@@ -79,31 +93,42 @@ class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, s
 
         collapsedFactors.foreach(_.updateCollapsedParents(1.0))
 
-      case v: MutableDiscreteSeqVar[_] if !v.isEmpty => //TODO: make this more efficient
+      case v: MutableDiscreteSeqVar[_] if !v.isEmpty =>
         val childFactors = model.childFactors(v)
         val parentFactor = model.getParentFactor(v)
 
-        val domainSize = v.domain.elementDomain.size
+        var candidates = samplingCandidates(v)
+        if (candidates == null)
+          candidates = 0 until v.domain.elementDomain.size
 
         val collapsedFactors = ArrayBuffer[DirectedFactor]()
         collapsedFactors ++= childFactors.filter(f => f.parents.exists(isCollapsed))
         if (parentFactor.isDefined && parentFactor.get.parents.exists(isCollapsed))
           collapsedFactors += parentFactor.get
 
+        //HACK: Init cached counts for v if childFactors contain [Plated]MultinomialFromSeq.Factor, to be sure that current counts are being cached
+        if(childFactors.exists(f => f.isInstanceOf[PlatedMultinomialFromSeq.Factor] || f.isInstanceOf[MultinomialFromSeq.Factor]))
+          getCount(v,0)
+
         (0 until v.size).foreach(idx => {
           var sum = 0.0
-          val distribution = Array.ofDim[Double](domainSize)
+          val distribution = Array.ofDim[Double](candidates.length)
 
+          //update sufficient statistics
           collapsedFactors.foreach(f => f.updateCollapsedParentsForIdx(-1.0, idx))
+          //update cache if existing, decrement current element
+          countsCache.get(v).foreach(_(v.intValue(idx)) -= 1)
 
-          (0 until domainSize).foreach {
-            value1 =>
-              v.set(idx, value1)(null)
+          (0 until candidates.size).foreach {
+            i =>
+              val candidate = candidates(i)
+              v.set(idx, candidate)(null)
 
               val pValue = parentFactor match {
                 //faster by not calculating the whole probability here, because only the variable at idx changes
-                case Some(f: PlatedDiscreteMixture.Factor) => f._2(f._3(idx).intValue).value(value1)
-                case Some(f: PlatedDiscrete.Factor) => f._2.value(value1)
+                case Some(f: PlatedDiscreteMixture.Factor) => f._2(f._3(idx).intValue).value(candidate)
+                case Some(f: PlatedDiscrete.Factor) => f._2.value(candidate)
+                case Some(f: PlatedMultinomialFromSeq.Factor) => getCount(f._2, candidate)  //efficient by using cache
                 //Defaults that could potentially be very slow if we are sampling a SeqVar (e.g., above two cases)
                 case Some(f: DirectedFactor) => f.pr
                 case None => 1.0
@@ -111,19 +136,38 @@ class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, s
 
               val cValue = childFactors.foldLeft(1.0) {
                 //make this faster by not calculating the whole probability here, because only the variable at idx changes
-                case (acc: Double, f: PlatedDiscreteMixture.Factor) => acc * f._2(value1).value(f._1(idx).intValue)
+                case (acc: Double, f: PlatedDiscreteMixture.Factor) => acc * f._2(candidate).value(f._1(idx).intValue)
+                case (acc: Double, f: MultinomialFromSeq.Factor) => acc * {
+                  if(f._1.intValue == candidate) {
+                    //efficient through caching
+                    val ct = getCount(f._2, candidate)
+                    (ct+1.0)/ct
+                  } else 1.0
+                }
+                case (acc: Double, f: PlatedMultinomialFromSeq.Factor) => acc * {
+                  //efficient through caching
+                  val parentCount = getCount(f._2, candidate)
+                  val childCount = getCount(f._1, candidate)
+                  math.pow((parentCount+1.0)/parentCount,childCount)
+                }
                 //Defaults that could potentially be very slow if we are sampling a SeqVar (e.g., above two cases)
                 case (acc: Double, f: DirectedFactor) => acc * f.pr
               }
 
               val pr = pValue * cValue
               sum += pr
-              distribution(value1) = pr
+              distribution(i) = pr
           }
 
-          if (sum == 0) v.set(idx, random.nextInt(domainSize))(null)
-          else v.set(idx, cc.factorie.maths.nextDiscrete(distribution, sum)(random))(null)
+          val selected =
+            if (sum == 0)  candidates(random.nextInt(candidates.length))
+            else candidates(cc.factorie.maths.nextDiscrete(distribution, sum)(random))
 
+          v.set(idx,selected)(null)
+
+          //update cache if existing; increment count of selected element
+          countsCache.get(v).foreach(m => m += selected ->  (1.0 + m.getOrElse(selected,0.0)))
+          //update sufficient statistics
           collapsedFactors.foreach(f => f.updateCollapsedParentsForIdx(1.0, idx))
         })
 

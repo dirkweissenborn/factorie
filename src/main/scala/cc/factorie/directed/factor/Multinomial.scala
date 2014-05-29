@@ -20,6 +20,7 @@ import scala.util.Random
 import scala.collection.mutable
 
 
+//Used for example in the entity topic model as entity to assignment count (An Entity-Topic Model for Entity Linking. X. Han and L. Sun)
 object MultinomialFromSeq extends DirectedFamily2[DiscreteVar, DiscreteSeqVar] {
 
   case class Factor(override val _1: DiscreteVar, override val _2: DiscreteSeqVar) extends super.Factor(_1, _2) with DiscreteGeneratingFactor {
