@@ -19,13 +19,6 @@ import scala.Some
 import cc.factorie.infer.{DiscreteSummary1, Summary, SimpleDiscreteMarginal1, Maximize}
 
 
-trait DiscreteGeneratingFactor extends DirectedFactor {
-  //type ChildType <: GeneratedDiscreteVar
-  def prValue(value: Int): Double
-
-  //def prValue(s:StatisticsType, value:Int): Double
-}
-
 object Discrete extends DirectedFamily2[DiscreteVar, ProportionsVariable] {
 
   case class Factor(override val _1: DiscreteVar, override val _2: ProportionsVariable) extends super.Factor(_1, _2) with DiscreteGeneratingFactor {
