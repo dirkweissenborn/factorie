@@ -16,7 +16,7 @@ package cc.factorie.directed
 import cc.factorie.infer._
 import scala.collection.mutable.{ArrayBuffer, HashSet}
 import cc.factorie.variable._
-import cc.factorie.directed.factor.{PlatedDiscreteMixture, PlatedDiscrete, DirectedFactor}
+import cc.factorie.directed.factor.{DiscreteSeqGeneratingFactor, PlatedDiscreteMixture, PlatedDiscrete, DirectedFactor}
 import scala.collection.mutable
 
 /**
@@ -101,10 +101,10 @@ class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, s
         if (candidates == null)
           candidates = 0 until v.domain.elementDomain.size
 
-        val collapsedFactors = ArrayBuffer[DirectedFactor]()
-        collapsedFactors ++= childFactors.filter(f => f.parents.exists(isCollapsed))
+        val collapsedFactors = ArrayBuffer[DiscreteSeqGeneratingFactor]()
+        collapsedFactors ++= childFactors.filter(f => f.parents.exists(isCollapsed)).map(_.asInstanceOf[DiscreteSeqGeneratingFactor])
         if (parentFactor.isDefined && parentFactor.get.parents.exists(isCollapsed))
-          collapsedFactors += parentFactor.get
+          collapsedFactors += parentFactor.get.asInstanceOf[DiscreteSeqGeneratingFactor]
 
         //HACK: Init cached counts for v if childFactors contain [Plated]MultinomialFromSeq.Factor, to be sure that current counts are being cached
         if(childFactors.exists(f => f.isInstanceOf[PlatedMultinomialFromSeq.Factor] || f.isInstanceOf[MultinomialFromSeq.Factor]))

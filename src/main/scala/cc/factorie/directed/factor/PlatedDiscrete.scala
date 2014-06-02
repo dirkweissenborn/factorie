@@ -31,7 +31,7 @@ object PlatedDiscrete extends DirectedFamily2[DiscreteSeqVar, ProportionsVariabl
   def sampledValue(d: DiscreteDomain, length: Int, p: Proportions)(implicit random: scala.util.Random) =
     Vector.fill(length)(d.apply(p.sampleIndex))
 
-  case class Factor(override val _1: DiscreteSeqVar, override val _2: ProportionsVariable) extends super.Factor(_1, _2) {
+  case class Factor(override val _1: DiscreteSeqVar, override val _2: ProportionsVariable) extends super.Factor(_1, _2) with DiscreteSeqGeneratingFactor {
     def pr(child: DiscreteSeqVar#Value, p: Proportions): Double = self.pr(child, p)
 
     //override def logpr(s:Statistics): Double = self.logpr(s._1, s._2)

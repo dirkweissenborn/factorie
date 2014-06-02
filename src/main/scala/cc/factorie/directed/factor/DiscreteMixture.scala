@@ -56,6 +56,35 @@ object DiscreteMixture {
   def apply(p1: Mixture[ProportionsVariable], p2: DiscreteVar)(implicit random: scala.util.Random) = (c: DiscreteVar) => newFactor(c, p1, p2)
 }
 
+
+class DiscreteMixtureSeq extends DirectedFamily3[DiscreteSeqVar, Mixture[ProportionsVariable], DiscreteVar] {
+
+  case class Factor(override val _1: DiscreteSeqVar, override val _2: Mixture[ProportionsVariable], override val _3: DiscreteVar) extends super.Factor(_1, _2, _3) with DiscreteSeqGeneratingFactor {
+    def pr(children: DiscreteSeqVar#Value, mixture: scala.collection.Seq[Proportions], z: DiscreteVar#Value): Double = children.foldLeft(1.0)((product,child) => product * mixture(z.intValue).apply(child.intValue))
+
+    def sampledValue(mixture: scala.collection.Seq[Proportions], z: DiscreteVar#Value)(implicit random: scala.util.Random): DiscreteSeqVar#Value =
+      Vector.fill(_1.length)(_1.domain.elementDomain.apply(mixture(z.intValue).sampleIndex)).asInstanceOf[DiscreteSeqVar#Value]
+
+    override def updateCollapsedParents(weight: Double): Boolean = {
+      _1.foreach(child => _2(_3.intValue).value.masses.+=(child.intValue, weight)); true
+    }
+
+    override def updateCollapsedParentsForIdx(weight: Double, idx: Int) = {
+      _2(_3.intValue).value.masses.+=(_1.apply(idx).intValue, weight)
+      true
+    }
+  }
+
+  def newFactor(a: DiscreteSeqVar, b: Mixture[ProportionsVariable], c: DiscreteVar) = new Factor(a, b, c)
+}
+object DiscreteMixtureSeq {
+  def newFactor(a: DiscreteSeqVar, b: Mixture[ProportionsVariable], c: DiscreteVar)(implicit random: scala.util.Random): DiscreteMixtureSeq#Factor = {
+    val dm = new DiscreteMixtureSeq()
+    dm.Factor(a, b, c)
+  }
+  def apply(p1: Mixture[ProportionsVariable], p2: DiscreteVar)(implicit random: scala.util.Random) = (c: DiscreteSeqVar) => newFactor(c, p1, p2)
+}
+
 class DiscreteMixtureCounts(val discreteDomain: DiscreteDomain, val mixtureDomain: DiscreteDomain) extends Seq[SortedSparseCounts] {
 
   // counts(wordIndex).countOfIndex(topicIndex)

@@ -14,7 +14,7 @@
 package cc.factorie.directed.factor
 
 import cc.factorie.model._
-import cc.factorie.variable.{MutableVar, Var}
+import cc.factorie.variable._
 import cc.factorie.directed.MutableDirectedModel
 
 trait DirectedFactor extends Factor {
@@ -40,11 +40,19 @@ trait DirectedFactor extends Factor {
   // TODO Consider passing a second argument which is the value of the child to use in the update
   def updateCollapsedParents(weight: Double): Boolean = throw new Error(factorName + ": Collapsing parent not implemented in " + this.getClass.getName)
 
-  def updateCollapsedParentsForIdx(weight: Double, idx: Int): Boolean = throw new Error(factorName + ": Collapsing parent (maybe parent is not a SeqVar) at specified idx not implemented in " + this.getClass.getName)
-
   def updateCollapsedChild(): Boolean = throw new Error(factorName + ": Collapsing child not implemented.")
 
   def resetCollapsedChild(): Boolean = throw new Error(factorName + ": Resetting child not implemented.")
+}
+
+trait DiscreteGeneratingFactor extends DirectedFactor {
+  type ChildType <: DiscreteVar
+  def prValue(value: Int): Double
+}
+
+trait DiscreteSeqGeneratingFactor extends DirectedFactor {
+  type ChildType <: DiscreteSeqVar
+  def updateCollapsedParentsForIdx(weight: Double, idx: Int): Boolean = throw new Error(factorName + ": Collapsing parent at specified idx not implemented in " + this.getClass.getName)
 }
 
 class GeneratedVarWrapper[V <: Var](val v: V) {
