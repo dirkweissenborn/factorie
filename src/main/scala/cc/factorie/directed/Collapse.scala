@@ -90,6 +90,7 @@ object DenseCountsProportionsMixtureCollapser extends Collapser {
           //case f:MixtureComponent.Factor => {}
           case f: Mixture.Factor => {}
           case f: DiscreteMixture#Factor => m(f._3.intValue).value.masses.+=(f._1.intValue, 1.0)
+          case f: DiscreteMixtureSeq#Factor => f._1.intValues.foreach(childValue => m(f._3.intValue).value.masses.+=(childValue, 1.0))
           case f: PlatedDiscreteMixture.Factor => (0 until f._1.length).foreach(i => m(f._3(i).intValue).value.masses.+=(f._1(i).intValue, 1.0))
           case f: Factor => {
             println("DenseCountsProportionsMixtureCollapser unexpected factor " + f); return false
