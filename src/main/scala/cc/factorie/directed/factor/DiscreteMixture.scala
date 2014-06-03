@@ -60,11 +60,12 @@ object DiscreteMixture {
 class DiscreteMixtureSeq extends DirectedFamily3[DiscreteSeqVar, Mixture[ProportionsVariable], DiscreteVar] {
 
   case class Factor(override val _1: DiscreteSeqVar, override val _2: Mixture[ProportionsVariable], override val _3: DiscreteVar) extends super.Factor(_1, _2, _3) with DiscreteSeqGeneratingFactor {
-    def pr(children: DiscreteSeqVar#Value, mixture: scala.collection.Seq[Proportions], z: DiscreteVar#Value): Double = children.foldLeft(1.0)((product,child) => product * mixture(z.intValue).apply(child.intValue))
 
+    def prForIndex(idx: Int) = _2(_3.intValue).value.apply(_1.intValue(idx))
+
+    def pr(children: DiscreteSeqVar#Value, mixture: scala.collection.Seq[Proportions], z: DiscreteVar#Value): Double = children.foldLeft(1.0)((product,child) => product * mixture(z.intValue).apply(child.intValue))
     def sampledValue(mixture: scala.collection.Seq[Proportions], z: DiscreteVar#Value)(implicit random: scala.util.Random): DiscreteSeqVar#Value =
       Vector.fill(_1.length)(_1.domain.elementDomain.apply(mixture(z.intValue).sampleIndex)).asInstanceOf[DiscreteSeqVar#Value]
-
     override def updateCollapsedParents(weight: Double): Boolean = {
       _1.foreach(child => _2(_3.intValue).value.masses.+=(child.intValue, weight)); true
     }
