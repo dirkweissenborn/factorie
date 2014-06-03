@@ -14,7 +14,7 @@
 
 package cc.factorie.directed
 
-import cc.factorie.directed.factor.{DiscreteGeneratingFactor, DirectedFamily2}
+import cc.factorie.directed.factor.{DiscreteSeqGeneratingFactor, DiscreteGeneratingFactor, DirectedFamily2}
 import cc.factorie.variable.{DiscreteValue, DiscreteSeqVar, DiscreteVar}
 import scala.util.Random
 import scala.collection.mutable
@@ -37,7 +37,9 @@ object MultinomialFromSeq extends DirectedFamily2[DiscreteVar, DiscreteSeqVar] {
 
 object PlatedMultinomialFromSeq extends DirectedFamily2[DiscreteSeqVar, DiscreteSeqVar] {
 
-  case class Factor(override val _1: DiscreteSeqVar, override val _2: DiscreteSeqVar) extends super.Factor(_1, _2) {
+  case class Factor(override val _1: DiscreteSeqVar, override val _2: DiscreteSeqVar) extends super.Factor(_1, _2) with DiscreteSeqGeneratingFactor {
+    def prForIndex(idx: Int) = prValue(_1.intValue(idx),_2)
+
     def prValue(intValue: Int, parent: DiscreteSeqVar): Double = parent.count(_.intValue == intValue).toDouble / parent.size
 
     def pr(children: DiscreteSeqVar#Value, parent: DiscreteSeqVar#Value) = {

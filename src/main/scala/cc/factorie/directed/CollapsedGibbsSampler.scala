@@ -18,6 +18,7 @@ import scala.collection.mutable.{ArrayBuffer, HashSet}
 import cc.factorie.variable._
 import cc.factorie.directed.factor.{DiscreteSeqGeneratingFactor, PlatedDiscreteMixture, PlatedDiscrete, DirectedFactor}
 import scala.collection.mutable
+import cc.factorie.util.FastLogging
 
 /**
  *
@@ -28,7 +29,10 @@ import scala.collection.mutable
  *                           For SeqVars this function should return candidates for the elements of the SeqVars!
  * @param random
  */
-class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, samplingCandidates: Var => Seq[Int] = _ => null)(implicit val random: scala.util.Random) extends Sampler[Iterable[MutableVar]] {
+class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, samplingCandidates: Var => Seq[Int] = _ => null)(implicit val random: scala.util.Random)
+  extends Sampler[Iterable[MutableVar]]
+  with FastLogging {
+
   var debug = false
   makeNewDiffList = false
   var temperature = 1.0
@@ -125,12 +129,13 @@ class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, s
               v.set(idx, candidate)(null)
 
               val pValue = parentFactor match {
-                //faster by not calculating the whole probability here, because only the variable at idx changes
-                case Some(f: PlatedDiscreteMixture.Factor) => f._2(f._3(idx).intValue).value(candidate)
-                case Some(f: PlatedDiscrete.Factor) => f._2.value(candidate)
                 case Some(f: PlatedMultinomialFromSeq.Factor) => getCount(f._2, candidate)  //efficient by using cache
+                //Fast because it only calculates probability for current index
+                case Some(f: DiscreteSeqGeneratingFactor) => f.prForIndex(idx)
                 //Defaults that could potentially be very slow if we are sampling a SeqVar (e.g., above two cases)
-                case Some(f: DirectedFactor) => f.pr
+                case Some(f: DirectedFactor) =>
+                  logger.warn(s"Sampling DiscreteSeqVar using ${f.getClass} could be slow. ${f.getClass} should inherit from DiscreteSeqGeneratingFactor!")
+                  f.pr
                 case None => 1.0
               }
 
@@ -171,7 +176,7 @@ class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, s
           collapsedFactors.foreach(f => f.updateCollapsedParentsForIdx(1.0, idx))
         })
 
-      case _ => throw new IllegalArgumentException("Can only sample for DiscreteVar or DiscreteSeqVar")
+      case _ => throw new IllegalArgumentException("Can only sample for DiscreteVar or DiscreteSeqVar at the moment!")
     }
 
     d

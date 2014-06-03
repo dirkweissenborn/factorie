@@ -53,6 +53,8 @@ trait DiscreteGeneratingFactor extends DirectedFactor {
 trait DiscreteSeqGeneratingFactor extends DirectedFactor {
   type ChildType <: DiscreteSeqVar
   def updateCollapsedParentsForIdx(weight: Double, idx: Int): Boolean = throw new Error(factorName + ": Collapsing parent at specified idx not implemented in " + this.getClass.getName)
+  def prForIndex(idx:Int):Double
+
 }
 
 class GeneratedVarWrapper[V <: Var](val v: V) {
