@@ -20,7 +20,6 @@ import cc.factorie.la.DenseTensor1
 import java.io.{File, PrintWriter}
 import scala.util.matching.Regex
 import cc.factorie.variable._
-import cc.factorie.directed.factor.{Mixture, Dirichlet}
 
 /* Implementation for Sparse Stochastic inference by Mimno et.al */
 class SparseOnlineLDA(val wordDomain: CategoricalDomain[String],

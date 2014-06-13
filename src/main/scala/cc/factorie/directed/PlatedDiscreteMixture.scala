@@ -11,7 +11,7 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-package cc.factorie.directed.factor
+package cc.factorie.directed
 
 import cc.factorie.variable._
 
@@ -26,9 +26,12 @@ object PlatedDiscreteMixture extends DirectedFamily3[DiscreteSeqVar, Mixture[Pro
   def sampledValue(d: DiscreteDomain, mixture: scala.collection.Seq[Proportions], gates: DiscreteSeqVar#Value)(implicit random: scala.util.Random): DiscreteSeqVar#Value =
     (for (i <- 0 until gates.length) yield d.apply(mixture(gates(i).intValue).sampleIndex)).asInstanceOf[DiscreteSeqVar#Value]
 
-  case class Factor(override val _1: DiscreteSeqVar, override val _2: Mixture[ProportionsVariable], override val _3: DiscreteSeqVar) extends super.Factor(_1, _2, _3) with DiscreteSeqGeneratingFactor {
+  case class Factor(override val _1: DiscreteSeqVar, override val _2: Mixture[ProportionsVariable], override val _3: DiscreteSeqVar) extends super.Factor(_1, _2, _3) with SeqGeneratingFactor with SeqParentFactor {
 
-    def prForIndex(idx: Int) = _2(_3.intValue(idx)).value.apply(_1.intValue(idx))
+    def proportionalForChildIndex(idx: Int) = _2(_3.intValue(idx)).value.apply(_1.intValue(idx))
+
+    //the same as prForIndex here
+    def proportionalForParentIndex(idx: Int) = proportionalForChildIndex(idx)
 
     def pr(child: DiscreteSeqVar#Value, mixture: scala.collection.Seq[Proportions], zs: DiscreteSeqVar#Value): Double = self.pr(child, mixture, zs)
 

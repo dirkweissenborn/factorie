@@ -18,7 +18,6 @@ import java.io.File
 import cc.factorie.app.strings.Stopwords
 import cc.factorie.app.strings.alphaSegmenter
 import cc.factorie.directed._
-import cc.factorie.directed.factor._
 import cc.factorie.variable._
 
 /**

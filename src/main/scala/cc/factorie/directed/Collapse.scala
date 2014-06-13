@@ -23,9 +23,9 @@ import cc.factorie.variable.Var
    that allows CollapsedGibbsSampler or CollapsedVariationalBayes to treat
    them as collapsed for their inference.
    @author Andrew McCallum */
-class Collapse(val model:DirectedModel) {
-  val collapsers = new ArrayBuffer[Collapser] ++= Seq(DenseCountsProportionsCollapser, DenseCountsProportionsMixtureCollapser)
-  def apply(variables:Seq[Var]): Unit = {
+class Collapse(val model: DirectedModel) {
+  val collapsers = new ArrayBuffer[Collapser] ++= Seq(ProportionsCollapser, ProportionsMixtureCollapser)
+  def apply(variables: Seq[Var]): Unit = {
     val factors = model.factors(variables)
     // This next line does the collapsing
     val option = collapsers.find(_.collapse(variables, factors, model))
@@ -38,8 +38,8 @@ trait Collapser {
   def collapse(variables:Seq[Var], factors:Iterable[Factor], model:DirectedModel): Boolean
 }
 
-object DenseCountsProportionsCollapser extends Collapser {
-  def collapse(variables:Seq[Var], factors:Iterable[Factor], model:DirectedModel): Boolean = {
+object ProportionsCollapser extends Collapser {
+  def collapse(variables: Seq[Var], factors: Iterable[Factor], model: DirectedModel): Boolean = {
     if (variables.size != 1) return false
     variables.head match {
       case p:ProportionsVar => {
@@ -63,8 +63,8 @@ object DenseCountsProportionsCollapser extends Collapser {
   }
 }
 
-object DenseCountsProportionsMixtureCollapser extends Collapser {
-  def collapse(variables:Seq[Var], factors:Iterable[Factor], model:DirectedModel): Boolean = {
+object ProportionsMixtureCollapser extends Collapser {
+  def collapse(variables: Seq[Var], factors: Iterable[Factor], model: DirectedModel): Boolean = {
     if (variables.size != 1) return false
     variables.head match {
       case m:Mixture[ProportionsVar @unchecked] => {
@@ -87,7 +87,7 @@ object DenseCountsProportionsMixtureCollapser extends Collapser {
           case f: DiscreteMixture#Factor => m(f._3.intValue).value.masses.+=(f._1.intValue, 1.0)
           case f: PlatedDiscreteMixture.Factor => (0 until f._1.length).foreach(i => m(f._3(i).intValue).value.masses.+=(f._1(i).intValue, 1.0))
           case f: Factor => {
-            println("DenseCountsProportionsMixtureCollapser unexpected factor " + f); return false
+            println("ProportionsMixtureCollapser unexpected factor " + f); return false
           }
         }
         true

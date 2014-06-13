@@ -17,7 +17,6 @@ import scala.collection.mutable.ArrayBuffer
 import cc.factorie.variable._
 import cc.factorie.model.Factor
 import cc.factorie.infer.{DiscreteSeqMarginal, Summary1}
-import cc.factorie.directed.factor.{PlatedDiscreteMixture, PlatedDiscrete}
 
 //import cc.factorie.la.ArrayLA.Implicits._
 

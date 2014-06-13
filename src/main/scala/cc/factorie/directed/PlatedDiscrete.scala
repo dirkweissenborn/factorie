@@ -11,7 +11,7 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-package cc.factorie.directed.factor
+package cc.factorie.directed
 
 import cc.factorie.variable._
 
@@ -31,8 +31,8 @@ object PlatedDiscrete extends DirectedFamily2[DiscreteSeqVar, ProportionsVariabl
   def sampledValue(d: DiscreteDomain, length: Int, p: Proportions)(implicit random: scala.util.Random) =
     Vector.fill(length)(d.apply(p.sampleIndex))
 
-  case class Factor(override val _1: DiscreteSeqVar, override val _2: ProportionsVariable) extends super.Factor(_1, _2) with DiscreteSeqGeneratingFactor {
-    def prForIndex(idx: Int) = _2.value.apply(_1.intValue(idx))
+  case class Factor(override val _1: DiscreteSeqVar, override val _2: ProportionsVariable) extends super.Factor(_1, _2) with SeqGeneratingFactor {
+    def proportionalForChildIndex(idx: Int) = _2.value.apply(_1.intValue(idx))
 
     def pr(child: DiscreteSeqVar#Value, p: Proportions): Double = self.pr(child, p)
 

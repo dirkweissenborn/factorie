@@ -25,18 +25,18 @@ class DeterministicSentenceSegmenter extends DocumentAnnotator {
   /** If true, every newline causes a sentence break. */
   var newlineBoundary = false
 
-  /** If true,, every double newline causes a sentence break. */
+  /** If true, every double newline causes a sentence break. */
   var doubleNewlineBoundary = true
 
   /** Matches the Token.string of punctuation that always indicates the end of a sentence.  It does not include possible additional tokens that may be appended to the sentence such as quotes and closing parentheses. */
-  val closingRegex = "\\A([!\\?]+|[\\.;])\\Z".r // We allow repeated "!" and "?" to end a sentence, but not repeated "."
+  val closingRegex = "\\A([!\\?]+|[\\.])\\Z".r // We allow repeated "!" and "?" to end a sentence, but not repeated "."
   
   /** Matches the Token.string of tokens that may extend a sentence, such as quotes, closing parentheses, and even additional periods. */
   val closingContinuationRegex = "^''|[\\.\"!\\?\\p{Pf}\\p{Pe}]+$".r
   
   /** Matches the Token.string of tokens that might possibility indicate the end of a sentence, such as an mdash.
       The sentence segmenter will only actually create a sentence end here if possibleSentenceStart is true for the following token. */
-  val possibleClosingRegex = "^\\.\\.+|[-\\p{Pd}\u2014]+$".r
+  val possibleClosingRegex = "^\\.\\.+|;|[-\\p{Pd}\u2014]+$".r
   
   /** Whitespace that should not be allowed between a closingRegex and closingContinuationRegex for a sentence continuation.  For example:  He ran.  "You shouldn't run!" */
   val spaceRegex = "[ \n\r\t\u00A0\\p{Z}]+".r

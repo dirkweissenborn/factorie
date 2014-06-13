@@ -15,7 +15,6 @@ package cc.factorie.tutorial
 import cc.factorie.directed._
 import cc.factorie.variable._
 import cc.factorie.infer.Maximize
-import cc.factorie.directed.factor.{Discrete, MaximizeDirichletByMomentMatching, Dirichlet}
 
 /** Simple demonstration of Dirichlet-distributed proportions generating Discrete values. */
 object DirichletDemo {

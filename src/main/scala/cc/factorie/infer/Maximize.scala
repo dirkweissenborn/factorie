@@ -17,9 +17,8 @@ import cc.factorie.directed._
 import scala.collection.mutable.{HashSet,HashMap,ArrayBuffer}
 import cc.factorie.variable._
 import cc.factorie.model.Model
-import cc.factorie.directed.factor.{MaximizeGaussianVariance, MaximizeGaussianMean, MaximizeGate, MaximizeGeneratedDiscrete}
 
-/** An inference engine that finds score-maximizing values.  
+/** An inference engine that finds score-maximizing values.
     The "infer" method returns a summary holding the maximizing assignment, but does not change the current variable values.
     By convention, subclass-implemented "apply" methods should change the current variable values to those that maximize;
     this convention differs from other Infer instances, which do not typically change variable values.  */

@@ -15,7 +15,6 @@ import cc.factorie._
 import scala.collection.mutable.ArrayBuffer
 import cc.factorie.directed._
 import cc.factorie.variable.{MassesVariable, CategoricalSeqDomain}
-import cc.factorie.directed.factor.Dirichlet
 
 // Unfinished model similar to Labeled-LDA.
 

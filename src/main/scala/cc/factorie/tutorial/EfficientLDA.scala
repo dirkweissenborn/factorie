@@ -18,7 +18,6 @@ import cc.factorie.app.strings.alphaSegmenter
 import cc.factorie.app.topics.lda.SparseLDAInferencer
 import cc.factorie.directed._
 import cc.factorie.variable._
-import cc.factorie.directed.factor._
 
 /**
  * LDA example using the SparseLDAInferencer, very efficient.
