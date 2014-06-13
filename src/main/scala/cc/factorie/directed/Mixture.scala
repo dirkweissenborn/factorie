@@ -11,10 +11,9 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-package cc.factorie.directed.factor
+package cc.factorie.directed
 
 import cc.factorie.variable._
-import cc.factorie.directed.MutableDirectedModel
 
 //trait GateVar extends MutableDiscreteVar
 //abstract class GateVariable(initial:Int) extends DiscreteVariable(initial) with GateVar {}

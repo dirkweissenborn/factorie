@@ -14,7 +14,6 @@
 
 package cc.factorie.directed
 
-import cc.factorie.directed.factor.{DiscreteSeqGeneratingFactor, DiscreteGeneratingFactor, DirectedFamily2}
 import cc.factorie.variable.{DiscreteValue, DiscreteSeqVar, DiscreteVar}
 import scala.util.Random
 import scala.collection.mutable
@@ -23,8 +22,10 @@ import scala.collection.mutable
 //Used for example in the entity topic model as entity to assignment count (An Entity-Topic Model for Entity Linking. X. Han and L. Sun)
 object MultinomialFromSeq extends DirectedFamily2[DiscreteVar, DiscreteSeqVar] {
 
-  case class Factor(override val _1: DiscreteVar, override val _2: DiscreteSeqVar) extends super.Factor(_1, _2) with DiscreteGeneratingFactor {
+  case class Factor(override val _1: DiscreteVar, override val _2: DiscreteSeqVar) extends super.Factor(_1, _2) with DiscreteGeneratingFactor with SeqParentFactor {
     def pr(child: DiscreteVar#Value, seq: DiscreteSeqVar#Value) = seq.count(_.intValue == child.intValue).toDouble / seq.size
+    // there is no efficient way of calculating the proportional if only parent at index changes, chaching can help here
+    def proportionalForParentIndex(idx: Int) = _2.count(_.intValue == _1.intValue).toDouble
     override def prValue(intValue: Int): Double = _2.count(_.intValue == intValue).toDouble / _2.size
     def sampledValue(p1: DiscreteSeqVar#Value)(implicit random: Random) = _1.domain.apply(p1(random.nextInt(p1.size)).intValue).asInstanceOf[DiscreteVar#Value]
   }
@@ -37,8 +38,8 @@ object MultinomialFromSeq extends DirectedFamily2[DiscreteVar, DiscreteSeqVar] {
 
 object PlatedMultinomialFromSeq extends DirectedFamily2[DiscreteSeqVar, DiscreteSeqVar] {
 
-  case class Factor(override val _1: DiscreteSeqVar, override val _2: DiscreteSeqVar) extends super.Factor(_1, _2) with DiscreteSeqGeneratingFactor {
-    def prForIndex(idx: Int) = prValue(_1.intValue(idx),_2)
+  case class Factor(override val _1: DiscreteSeqVar, override val _2: DiscreteSeqVar) extends super.Factor(_1, _2) with SeqGeneratingFactor {
+    def proportionalForChildIndex(idx: Int) = _2.count(_.intValue == _2(idx).intValue).toDouble
 
     def prValue(intValue: Int, parent: DiscreteSeqVar): Double = parent.count(_.intValue == intValue).toDouble / parent.size
 

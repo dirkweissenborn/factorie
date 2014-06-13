@@ -15,8 +15,7 @@ package cc.factorie.directed
 
 import scala.collection.mutable.ArrayBuffer
 import cc.factorie.model.{Family, Factor}
-import cc.factorie.variable._
-import cc.factorie.variable.Var
+import cc.factorie.variable.{Var, ProportionsVar, SortedSparseCountsProportions1, DenseProportions1}
 
 /* Contains various recipes that "collapse" variables
    by setting the value of variables to an internal state 
@@ -24,7 +23,7 @@ import cc.factorie.variable.Var
    them as collapsed for their inference.
    @author Andrew McCallum */
 class Collapse(val model: DirectedModel) {
-  val collapsers = new ArrayBuffer[Collapser] ++= Seq(DenseCountsProportionsCollapser, DenseCountsProportionsMixtureCollapser)
+  val collapsers = new ArrayBuffer[Collapser] ++= Seq(ProportionsCollapser, ProportionsMixtureCollapser)
 
   def apply(variables: Seq[Var]): Unit = {
     val factors = model.factors(variables)
@@ -42,7 +41,7 @@ trait Collapser {
   def collapse(variables: Seq[Var], factors: Iterable[Factor], model: DirectedModel): Boolean
 }
 
-object DenseCountsProportionsCollapser extends Collapser {
+object ProportionsCollapser extends Collapser {
   def collapse(variables: Seq[Var], factors: Iterable[Factor], model: DirectedModel): Boolean = {
     if (variables.size != 1) return false
     variables.head match {
@@ -54,9 +53,11 @@ object DenseCountsProportionsCollapser extends Collapser {
           //case f:PlatedDiscrete.Factor => forIndex(f._1.length)(i => f._2.asInstanceOf[DenseCountsProportions].increment(f._1(i).intValue, 1.0)(null))
           case f: PlatedDiscrete.Factor => (0 until f._1.length).foreach(i => p.value.masses.+=(f._1(i).intValue, 1.0))
           //case f:Dirichlet.Factor if (f.family == Dirichlet) => p.increment(f._2)(null)
-          case f:Dirichlet.Factor => p.value match {
-            case pt:DenseProportions1 => pt.masses.+=(f._2.value)
-            case pt:SortedSparseCountsProportions1 if model.parentFactor(p) eq f => pt.prior = f._2.value
+          case f: Dirichlet.Factor => p.value match {
+            case pt: DenseProportions1 => pt.masses.+=(f._2.value)
+            case pt: SortedSparseCountsProportions1 if model.parentFactor(p) eq f =>
+              if(pt.prior eq null) pt.prior = f._2.value
+              else pt.prior += f._2.value
           }
           case _ => {
             println("DenseCountsProportionsCollapser unexpected factor " + f); return false
@@ -71,7 +72,7 @@ object DenseCountsProportionsCollapser extends Collapser {
   }
 }
 
-object DenseCountsProportionsMixtureCollapser extends Collapser {
+object ProportionsMixtureCollapser extends Collapser {
   def collapse(variables: Seq[Var], factors: Iterable[Factor], model: DirectedModel): Boolean = {
     if (variables.size != 1) return false
     variables.head match {
@@ -80,7 +81,7 @@ object DenseCountsProportionsMixtureCollapser extends Collapser {
         m.foreach(p => {
           p.value.masses.zero()
           model.parentFactor(p) match {
-            case f:Dirichlet.Factor => p.value.masses.+=(f._2.value)
+            case f: Dirichlet.Factor => p.value.masses.+=(f._2.value)
           }
         })
         // TODO We really should create a mechanism indicating that a variable/factor is deterministic 
@@ -93,7 +94,7 @@ object DenseCountsProportionsMixtureCollapser extends Collapser {
           case f: DiscreteMixtureSeq#Factor => f._1.intValues.foreach(childValue => m(f._3.intValue).value.masses.+=(childValue, 1.0))
           case f: PlatedDiscreteMixture.Factor => (0 until f._1.length).foreach(i => m(f._3(i).intValue).value.masses.+=(f._1(i).intValue, 1.0))
           case f: Factor => {
-            println("DenseCountsProportionsMixtureCollapser unexpected factor " + f); return false
+            println("ProportionsMixtureCollapser unexpected factor " + f); return false
           }
         }
         true

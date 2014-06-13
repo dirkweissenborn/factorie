@@ -16,7 +16,7 @@ package cc.factorie.infer
 import cc.factorie.la._
 import cc.factorie.variable._
 import cc.factorie.model._
-import cc.factorie.directed.factor.{MultivariateGaussian, DirectedTypeHelpers, Gaussian}
+import cc.factorie.directed.{MultivariateGaussian, DirectedTypeHelpers, Gaussian}
 import DirectedTypeHelpers.MutableTensorVarTensor1
 
 /** Stores a marginal distribution containing a joint distribution over a set of variables.

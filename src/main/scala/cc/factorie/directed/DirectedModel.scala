@@ -16,7 +16,6 @@ import scala.collection.mutable.{ArrayBuffer, HashMap}
 
 import cc.factorie.variable.{MutableVar, VarWithDeterministicValue, Var, DiffList}
 import cc.factorie.model.{Model, Factor}
-import cc.factorie.directed.factor.DirectedFactor
 
 trait DirectedModel extends Model {
   def getParentFactor(v: Var): Option[DirectedFactor]

@@ -19,7 +19,6 @@ import cc.factorie.app.strings.alphaSegmenter
 import java.util.Date
 import cc.factorie.directed._
 import cc.factorie.variable._
-import cc.factorie.directed.factor._
 
 // An implementation of Topics-over-Time [Wang, McCallum, KDD 2006]
 // TODO Not yet finished; needs the appropriate CollapsedGibbsSampler handler

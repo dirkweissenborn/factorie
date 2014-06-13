@@ -11,11 +11,10 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-package cc.factorie.directed.factor
+package cc.factorie.directed
 
 import cc.factorie.model._
 import cc.factorie.variable._
-import cc.factorie.directed.MutableDirectedModel
 
 trait DirectedFactor extends Factor {
   type ChildType <: Var
@@ -50,11 +49,17 @@ trait DiscreteGeneratingFactor extends DirectedFactor {
   def prValue(value: Int): Double
 }
 
-trait DiscreteSeqGeneratingFactor extends DirectedFactor {
-  type ChildType <: DiscreteSeqVar
+//used for efficient sampling of sequence variables with parent factors
+trait SeqGeneratingFactor extends DirectedFactor {
+  type ChildType <: SeqVar[_]
   def updateCollapsedParentsForIdx(weight: Double, idx: Int): Boolean = throw new Error(factorName + ": Collapsing parent at specified idx not implemented in " + this.getClass.getName)
-  def prForIndex(idx:Int):Double
+  def proportionalForChildIndex(idx:Int):Double
+}
 
+//used for efficient sampling of sequence variables with child factors
+trait SeqParentFactor extends DirectedFactor {
+  require(parents.count(_.isInstanceOf[SeqVar[_]]) == 1)
+  def proportionalForParentIndex(idx:Int):Double
 }
 
 class GeneratedVarWrapper[V <: Var](val v: V) {

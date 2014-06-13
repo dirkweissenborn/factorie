@@ -11,13 +11,12 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-package cc.factorie.directed.factor
+package cc.factorie.directed
 
 import cc.factorie._
 import cc.factorie.variable.{MutableDoubleVar, DoubleVar, DiscreteVar, HashMapAssignment}
 import cc.factorie.model.Factor
 import cc.factorie.infer._
-import cc.factorie.directed.DirectedModel
 
 object Gaussian extends DirectedFamily3[DoubleVar, DoubleVar, DoubleVar] {
   self =>

@@ -10,7 +10,7 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License. */
-package cc.factorie.directed.factor
+package cc.factorie.directed
 
 import cc.factorie.la._
 import cc.factorie.maths
@@ -19,7 +19,6 @@ import org.jblas.DoubleMatrix
 import cc.factorie.variable._
 import cc.factorie.infer._
 import scala.Some
-import cc.factorie.directed.DirectedModel
 
 object DirectedTypeHelpers {
   type MutableTensorVarTensor1 = MutableTensorVar {type Value = Tensor1}

@@ -19,9 +19,7 @@ import cc.factorie.la.{DenseTensor2, Tensor2, DenseTensor1, Tensor1}
 import cc.factorie.directed._
 import cc.factorie.variable._
 import cc.factorie.infer.InferByMeanField
-import cc.factorie.directed.factor._
 import DirectedTypeHelpers.{MutableTensorVarTensor2, MutableTensorVarTensor1}
-import cc.factorie.directed.factor.{Mixture, GaussianMixture, MaximizeGaussianMean, Discrete}
 
 
 object GaussianMixtureDemo {

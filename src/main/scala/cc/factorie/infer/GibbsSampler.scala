@@ -13,13 +13,12 @@
 package cc.factorie.infer
 
 import scala.collection.mutable.{ArrayBuffer,HashMap}
-import cc.factorie.directed.{DirectedModel}
+import cc.factorie.directed.{DirectedFactor, DirectedModel}
 import cc.factorie.variable._
 import cc.factorie.model.{Model, Factor}
 import cc.factorie._
-import cc.factorie.directed.factor.DirectedFactor
 
-/** Sample a value for a single variable.  This sampler works in one of two ways:  
+/** Sample a value for a single variable.  This sampler works in one of two ways:
     If the model is a DirectedModel, then sampling is performed based on a suite a handlers
     selected according to the variable type and its neighboring factors.
     If the model is not a DirectedModel, then the variable should inherit from IterableSettings

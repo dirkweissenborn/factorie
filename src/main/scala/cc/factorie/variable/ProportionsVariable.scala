@@ -19,9 +19,9 @@ import cc.factorie.la._
 import cc.factorie.util.{SparseDoubleSeq, DenseDoubleSeq, DoubleSeq, IntSeq}
 import scala.util.Random
 import cc.factorie.directed._
+import scala.Some
+import cc.factorie.variable._
 import cc.factorie.infer._
-import MassesVariable._
-import cc.factorie.directed.factor._
 
 // Proportions Values
 
@@ -35,27 +35,6 @@ trait Proportions extends Masses with ReadOnlyTensor {
   @inline final override def pr(i:Int): Double = apply(i)
   override def stringPrefix = "Proportions"
   override def toString = this.asSeq.take(maxToStringLength).mkString(stringPrefix+"(", ",", if (length > 10) "...)" else ")")
-
-  override val massTotal = 1.0
-  override def apply(i: Int) = {
-    val mt = masses.massTotal
-    if (mt == 0.0) 1.0 / length
-    else masses.apply(i) / mt
-  }
-}
-
-trait DirichletPrior extends Proportions {
-  var prior:Masses = null
-
-  override def apply(index:Int): Double = {
-    if (prior eq null) {
-      if (masses.massTotal == 0) 1.0 / length
-      else masses(index) / masses.massTotal
-    } else {
-      if (masses.massTotal == 0) prior(index) / prior.massTotal
-      else (masses(index) + prior(index)) / (masses.massTotal+prior.massTotal)
-    }
-  }
 }
 
 object Proportions {
@@ -79,43 +58,18 @@ trait Proportions2 extends Masses2 with Proportions { def masses: Masses2 }
 trait Proportions3 extends Masses3 with Proportions { def masses: Masses3 }
 trait Proportions4 extends Masses4 with Proportions { def masses: Masses4 }
 
-trait MassesProportions[A <: Masses] extends WrappedTensor[A] with Proportions {
-  def masses:A
-  def tensor = masses
-}
-
-class MassesProportions1(val masses:Masses1) extends MassesProportions[Masses1] with WrappedTensor1[Masses1] with Proportions1 {
-  def this(t:Tensor1) = this(toMasses1(t))
-}
-class MassesProportions2(val masses:Masses2) extends MassesProportions[Masses2] with WrappedTensor2[Masses2] with Proportions2 {
-  def this(t:Tensor2) = this(toMasses2(t))
-}
-class MassesProportions3(val masses:Masses3) extends MassesProportions[Masses3] with WrappedTensor3[Masses3] with Proportions3 {
-  def this(t:Tensor3) = this(toMasses3(t))
-}
-class MassesProportions4(val masses:Masses4) extends MassesProportions[Masses4] with WrappedTensor4[Masses4] with Proportions4 {
-  def this(t:Tensor4) = this(toMasses4(t))
-}
-
-
-
 // Proportions Values of dimensionality 1
 
 class SingletonProportions1(dim1:Int, singleIndex:Int) extends SingletonMasses1(dim1, singleIndex, 1.0) with Proportions1 {
-  val masses = this
+  def masses = this
   override def sampleIndex(massTotal:Double)(implicit r:Random): Int = singleIndex
 }
 class SingletonProportions2(dim1:Int, dim2: Int, singleIndex1:Int, singleIndex2: Int) extends SingletonMasses2(dim1, dim2, singleIndex1, singleIndex2, 1.0) with Proportions2 {
-  val masses = this
+  def masses = this
   override def sampleIndex(massTotal:Double)(implicit r:Random): Int = singleIndex
 }
 class UniformProportions1(dim1:Int) extends UniformMasses1(dim1, 1.0/dim1) with Proportions1 {
-  val masses = this
-  @inline final override def apply(index:Int) = {
-    val result = 1.0 / length
-    assert(result > 0 && result != Double.PositiveInfinity, "GrowableUniformProportions domain size is negative or zero.")
-    result
-  }
+  def masses = this
   override def sampleIndex(massTotal:Double)(implicit r:Random): Int = r.nextInt(dim1)
 }
 class GrowableUniformProportions1(sizeProxy:Iterable[Any], uniformValue:Double = 1.0) extends DenseDoubleSeq with Proportions1 {
@@ -123,6 +77,7 @@ class GrowableUniformProportions1(sizeProxy:Iterable[Any], uniformValue:Double =
   def activeDomainSize = activeDomain.size
   val masses = new GrowableUniformMasses1(sizeProxy, uniformValue)
   def dot(t: DoubleSeq): Double = throw new Error("No efficient dot for " + this.getClass.getName)
+  def massTotal = 1.0
   def dim1 = masses.length
   def activeDomain = new cc.factorie.util.RangeIntSeq(0, masses.length)
   def isDense = true
@@ -140,10 +95,16 @@ class GrowableUniformProportions1(sizeProxy:Iterable[Any], uniformValue:Double =
 trait DenseProportions extends DenseDoubleSeq with Proportions  {
   def forallActiveElements(f: (Int, Double) => Boolean) = forallElements(f)
   def activeDomainSize = activeDomain.size
+  def apply(index:Int): Double = {
+    val mt = masses.massTotal
+    if (mt == 0.0) 1.0 / length else masses.apply(index) / mt
+  }
+  // Should this method be here? it's a really good way to get bugs when you're looking for masses.massTotal -luke
+  // I understand, but Proportions is itself a Masses, and its massTotal is indeed 1.0, so I don't see a way around it.
+  def massTotal = 1.0
   def isDense = true
   def dot(t: DoubleSeq): Double = throw new Error("No efficient dot for " + this.getClass.getName)
-  //this is a read only tensor, so no zero here
-  //override def zero(): Unit = masses.zero()
+  override def zero(): Unit = masses.zero()
 }
 
 class DenseProportions1(override val dim1:Int) extends Proportions1 with DenseProportions {
@@ -185,13 +146,12 @@ class GrowableDenseProportions1(val sizeProxy:Iterable[Any]) extends Proportions
     Extends DenseTensor.
     @author Andrew McCallum */
 trait DenseTensorProportions extends DenseTensor with Proportions {
-  override def apply(i: Int) = _values(i)
-  //Unecessary, already overwritten in ReadOnlyTensor (which Proportions are)
+  def massTotal = 1.0
   // These overrides would not be necessary if Tensor were not a MutableDoubleSeq and we had a ImmutableDenseTensor, but I don't think it is worth it.
-  //override def +=(i:Int, incr:Double): Unit = throw new Error("Method +=(Int,Double) not defined on class "+getClass.getName)
+  override def +=(i:Int, incr:Double): Unit = throw new Error("Method +=(Int,Double) not defined on class "+getClass.getName)
   override def +=(t:DoubleSeq, offset:Int, f:Double): Unit = throw new Error("Method +=(DoubleSeq,Int,Double) not defined on class "+getClass.getName)
-  //override def zero(): Unit = throw new Error("Method zero() not defined on class "+getClass.getName)
-  //override def update(i:Int, v:Double): Unit = throw new Error("Method update(Int,Double) not defined on class "+getClass.getName)
+  override def zero(): Unit = throw new Error("Method zero() not defined on class "+getClass.getName)
+  override def update(i:Int, v:Double): Unit = throw new Error("Method update(Int,Double) not defined on class "+getClass.getName)
   override def *=(d: Double): Unit = throw new Error("Method *=(Double) not defined on class "+getClass.getName)
   override def :=(ds:DoubleSeq): Unit = throw new Error("Method :=(DoubleSeq) not defined on class "+getClass.getName)
   override def :=(a:Array[Double]): Unit = throw new Error("Method :=(Array[Double]) not defined on class "+getClass.getName)
@@ -200,7 +160,7 @@ trait DenseTensorProportions extends DenseTensor with Proportions {
 }
 // TODO Make default constructor take Array[Double], and another constructor that takes Tensor and copy
 class DenseTensorProportions1(override protected val _initialArray:Array[Double], checkNormalization:Boolean = true) extends DenseTensor1(_initialArray.length) with DenseTensorProportions with Proportions1 {
-  val masses = this
+  def masses = this
   def this(tensor:Tensor1) = this(tensor.toArray)
   if (checkNormalization) require(maths.almostEquals(this.sum, 1.0, 0.0001))
   override def copy: DenseTensorProportions1 = this // because we should be immutable
@@ -208,7 +168,7 @@ class DenseTensorProportions1(override protected val _initialArray:Array[Double]
 }
 
 class DenseTensorProportions2(override protected val _initialArray:Array[Double], dim1:Int, dim2:Int, checkNormalization:Boolean = true) extends DenseTensor2(dim1, dim2) with DenseTensorProportions with Proportions2 {
-  val masses = this
+  def masses = this
   def this(tensor:Tensor2) = this(tensor.toArray, tensor.dim1, tensor.dim2)
   if (checkNormalization) require(maths.almostEquals(_initialArray.sum, 1.0, 0.0001))
   override def copy: DenseTensorProportions2 = this // because we should be immutable
@@ -216,7 +176,7 @@ class DenseTensorProportions2(override protected val _initialArray:Array[Double]
 }
 
 class DenseTensorProportions3(override protected val _initialArray:Array[Double], dim1:Int, dim2:Int, dim3:Int, checkNormalization:Boolean = true) extends DenseTensor3(dim1, dim2, dim3) with DenseTensorProportions with Proportions3 {
-  val masses = this
+  def masses = this
   def this(tensor:Tensor3) = this(tensor.toArray, tensor.dim1, tensor.dim2, tensor.dim3)
   if (checkNormalization) require(maths.almostEquals(this.sum, 1.0, 0.0001))
   override def copy: DenseTensorProportions3 = this // because we should be immutable
@@ -224,7 +184,7 @@ class DenseTensorProportions3(override protected val _initialArray:Array[Double]
 }
 
 class DenseTensorProportions4(override protected val _initialArray:Array[Double], dim1:Int, dim2:Int, dim3:Int, dim4:Int, checkNormalization:Boolean = true) extends DenseTensor4(dim1, dim2, dim3, dim4) with DenseTensorProportions with Proportions4 {
-  val masses = this
+  def masses = this
   def this(tensor:Tensor4) = this(tensor.toArray, tensor.dim1, tensor.dim2, tensor.dim3, tensor.dim4)
   if (checkNormalization) require(maths.almostEquals(this.sum, 1.0, 0.0001))
   override def copy: DenseTensorProportions4 = this // because we should be immutable
@@ -236,6 +196,7 @@ class DenseTensorProportions4(override protected val _initialArray:Array[Double]
     Extends SparseIndexedTensor.
     @author Andrew McCallum */
 trait SparseTensorProportions extends SparseIndexedTensor with Proportions {
+  def massTotal = 1.0
   protected def tensor: SparseIndexedTensor
   def foreachActiveElement(f:(Int,Double)=>Unit): Unit = tensor.foreachActiveElement(f)
   tensor._makeReadable()
@@ -245,17 +206,15 @@ trait SparseTensorProportions extends SparseIndexedTensor with Proportions {
   def sizeHint(size: Int): Unit = {}
   def _values: Array[Double] = tensor._values
   override def activeDomainSize: Int = tensor.activeDomainSize
-  override def apply(i:Int) = tensor.apply(i)
+  def apply(i:Int) = tensor.apply(i)
   def activeDomain = tensor.activeDomain
   def dot(t:DoubleSeq): Double = tensor.dot(t)
 
   // These overrides would not be necessary if Tensor were not a MutableDoubleSeq and we had a ImmutableDenseTensor, but I don't think it is worth it.
-  // some overrides already happen in the ReadOnlyTensor trait
-  //override def +=(i:Int, incr:Double): Unit = throw new Error("Method +=(Int,Double) not defined on class "+getClass.getName)
+  override def +=(i:Int, incr:Double): Unit = throw new Error("Method +=(Int,Double) not defined on class "+getClass.getName)
   //override def +=(t:DoubleSeq, factors:DoubleSeq, f:Double): Unit = throw new Error("Method +=(DoubleSeq,Int,Double) not defined on class "+getClass.getName)
-  //override def zero(): Unit = throw new Error("Method zero() not defined on class "+getClass.getName)
-
-  //override def update(i:Int, v:Double): Unit = throw new Error("Method update(Int,Double) not defined on class "+getClass.getName)
+  override def zero(): Unit = throw new Error("Method zero() not defined on class "+getClass.getName)
+  override def update(i:Int, v:Double): Unit = throw new Error("Method update(Int,Double) not defined on class "+getClass.getName)
   override def *=(d: Double): Unit = throw new Error("Method *=(Double) not defined on class "+getClass.getName)
   override def :=(ds:DoubleSeq): Unit = throw new Error("Method :=(DoubleSeq) not defined on class "+getClass.getName)
   override def :=(a:Array[Double]): Unit = throw new Error("Method :=(Array[Double]) not defined on class "+getClass.getName)
@@ -264,14 +223,14 @@ trait SparseTensorProportions extends SparseIndexedTensor with Proportions {
 }
 
 class SparseTensorProportions1(val tensor:SparseIndexedTensor1, checkNormalization:Boolean = true) extends Tensor1 with SparseTensorProportions with Proportions1 {
-  val masses = toMasses1(tensor)
+  def masses = this
   if (checkNormalization) require(maths.almostEquals(this.sum, 1.0, 0.0001))
   def dim1 = tensor.dim1
   override def copy: SparseTensorProportions1 = this // because we should be immutable
   override def blankCopy: SparseTensorProportions1 = throw new Error("Method blankCopy not defined on class "+getClass.getName)
 }
 class SparseTensorProportions2(val tensor:SparseIndexedTensor2, checkNormalization:Boolean = true) extends Tensor2 with SparseTensorProportions with Proportions2 {
-  val masses = this
+  def masses = this
   if (checkNormalization) require(maths.almostEquals(this.sum, 1.0, 0.0001))
   def dim1 = tensor.dim1
   def dim2 = tensor.dim2
@@ -281,7 +240,7 @@ class SparseTensorProportions2(val tensor:SparseIndexedTensor2, checkNormalizati
   override def blankCopy: SparseTensorProportions2 = throw new Error("Method blankCopy not defined on class "+getClass.getName)
 }
 class SparseTensorProportions3(val tensor:SparseIndexedTensor3, checkNormalization:Boolean = true) extends Tensor3 with SparseTensorProportions with Proportions3 {
-  val masses = this
+  def masses = this
   if (checkNormalization) require(maths.almostEquals(this.sum, 1.0, 0.0001))
   def dim1 = tensor.dim1
   def dim2 = tensor.dim2
@@ -293,7 +252,7 @@ class SparseTensorProportions3(val tensor:SparseIndexedTensor3, checkNormalizati
   override def blankCopy: SparseTensorProportions3 = throw new Error("Method blankCopy not defined on class "+getClass.getName)
 }
 class SparseTensorProportions4(val tensor:SparseIndexedTensor4, checkNormalization:Boolean = true) extends Tensor4 with SparseTensorProportions with Proportions4 {
-  val masses = this
+  def masses = this
   if (checkNormalization) require(maths.almostEquals(this.sum, 1.0, 0.0001))
   def dim2 = tensor.dim2
   def dim1 = tensor.dim1
@@ -308,7 +267,6 @@ class SparseTensorProportions4(val tensor:SparseIndexedTensor4, checkNormalizati
 }
 
 
-
 ///** An immutable Proportions from a pre-normalized Tensor. */
 //abstract class NormalizedTensorProportions(val tensor:Tensor, checkNormalization:Boolean = true) extends Proportions {
 //  def dot(t: DoubleSeq): Double = throw new Error("No efficient dot for " + this.getClass.getName)
@@ -320,7 +278,7 @@ class SparseTensorProportions4(val tensor:SparseIndexedTensor4, checkNormalizati
 //class NormalizedTensorProportions1(override val tensor:Tensor1, checkNormalization:Boolean = true) extends NormalizedTensorProportions(tensor, checkNormalization) with Proportions1 {
 //  def dim1 = tensor.dim1
 //  def activeDomain = tensor.activeDomain
-//  val masses = this
+//  def masses = this
 //}
 //class NormalizedTensorProportions2(override val tensor:Tensor2, checkNormalization:Boolean = true) extends NormalizedTensorProportions(tensor, checkNormalization) with Proportions2 {
 //  def dim1 = tensor.dim1
@@ -328,7 +286,7 @@ class SparseTensorProportions4(val tensor:SparseIndexedTensor4, checkNormalizati
 //  def activeDomain = tensor.activeDomain
 //  def activeDomain1 = tensor.activeDomain1
 //  def activeDomain2 = tensor.activeDomain2
-//  val masses = this
+//  def masses = this
 //}
 //class NormalizedTensorProportions3(override val tensor:Tensor3, checkNormalization:Boolean = true) extends NormalizedTensorProportions(tensor, checkNormalization) with Proportions3 {
 //  def dim1 = tensor.dim1
@@ -338,7 +296,7 @@ class SparseTensorProportions4(val tensor:SparseIndexedTensor4, checkNormalizati
 //  def activeDomain1 = tensor.activeDomain1
 //  def activeDomain2 = tensor.activeDomain2
 //  def activeDomain3 = tensor.activeDomain3
-//  val masses = this
+//  def masses = this
 //}
 //class NormalizedTensorProportions4(override val tensor:Tensor4, checkNormalization:Boolean = true) extends NormalizedTensorProportions(tensor, checkNormalization) with Proportions4 {
 //  def dim1 = tensor.dim1
@@ -350,23 +308,33 @@ class SparseTensorProportions4(val tensor:SparseIndexedTensor4, checkNormalizati
 //  def activeDomain2 = tensor.activeDomain2
 //  def activeDomain3 = tensor.activeDomain3
 //  def activeDomain4 = tensor.activeDomain4
-//  val masses = this
+//  def masses = this
 //}
 
 /** Proportions expected to have zero probability on many of its discrete outcomes,
     and which is stored with high-probability outcomes first, for efficient sampling.
     Extends SparseDoubleSeq.
     @author Andrew McCallum */
-class SortedSparseCountsProportions1(val dim1:Int) extends SparseDoubleSeq with Proportions1 with DirichletPrior  {
+class SortedSparseCountsProportions1(val dim1:Int) extends SparseDoubleSeq with Proportions1  {
   val masses = new SortedSparseCountsMasses1(dim1)
   def activeDomainSize = masses.activeDomainSize
   override def foreachActiveElement(f: (Int, Double) => Unit) { masses.foreachActiveElement((i, v) => f(i, v/massTotal)) }
   def dot(t: DoubleSeq): Double = throw new Error("No efficient dot for " + this.getClass.getName)
+  def massTotal = 1.0
   def activeDomain = masses.activeDomain  // throw new Error("Not implemented")
   def isDense = false
-
-  //remove this method, because proportions are read-only tensors
-  //override def zero(): Unit = masses.zero()
+  var prior: Masses = null  // TODO We need somehow to say that this isDeterministic function of this.prior.
+  
+  def apply(index:Int): Double = {
+    if (prior eq null) {
+      if (masses.sparseCounts.countsTotal == 0) 1.0 / length
+      else masses.sparseCounts.countOfIndex(index).toDouble / masses.sparseCounts.countsTotal
+    } else {
+      if (masses.sparseCounts.countsTotal == 0) prior(index) / prior.massTotal
+      else (prior(index)+masses.sparseCounts.countOfIndex(index).toDouble) / (masses.sparseCounts.countsTotal+prior.massTotal)
+    }
+  }
+  override def zero(): Unit = masses.zero()
   // Note that "def zero()" defined in SortedSparseCountsMasses1 does not zero this.prior
   override def top(n:Int): cc.factorie.util.TopN[String] = {
     val len = math.min(n, masses.sparseCounts.numPositions)

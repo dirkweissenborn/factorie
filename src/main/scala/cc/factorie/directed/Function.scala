@@ -14,7 +14,6 @@
 package cc.factorie.directed
 
 import cc.factorie.variable.{VarWithDeterministicValue, DoubleVar}
-import cc.factorie.directed.factor.{DirectedFamily3, DirectedFactor}
 
 trait DeterministicFunction extends VarWithDeterministicValue {
   //overrride var parentFactor: DirectedFactor = null

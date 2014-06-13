@@ -18,7 +18,6 @@ import collection.mutable.{LinkedHashMap}
 import cc.factorie.directed._
 import java.util.concurrent.Executors
 import cc.factorie.variable._
-import cc.factorie.directed.factor._
 
 /** Typical recommended value for alpha1 is 50/numTopics. */
 class LDA(val wordSeqDomain: CategoricalSeqDomain[String], numTopics: Int = 10, alpha1:Double = 0.1, val beta1:Double = 0.01,

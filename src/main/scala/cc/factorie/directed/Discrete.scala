@@ -11,7 +11,7 @@
    See the License for the specific language governing permissions and
    limitations under the License. */
 
-package cc.factorie.directed.factor
+package cc.factorie.directed
 
 import cc.factorie.variable._
 import cc.factorie.model.Model
@@ -37,7 +37,6 @@ object Discrete extends DirectedFamily2[DiscreteVar, ProportionsVariable] {
 
     def maxIntValue(p: Proportions): Int = p.maxIndex
 
-    // TODO
     override def updateCollapsedParents(weight: Double): Boolean = {
       _2.value.masses.+=(_1.intValue, weight); true
     }

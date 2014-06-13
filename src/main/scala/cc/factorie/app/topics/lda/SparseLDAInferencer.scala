@@ -17,7 +17,6 @@ import cc.factorie.util.DoubleSeq
 import scala.Array
 import cc.factorie.directed.{DirectedModel}
 import cc.factorie.variable.{ProportionsVar, DiscreteSeqVariable, DiscreteDomain, CategoricalDomain}
-import cc.factorie.directed.factor.{PlatedDiscreteMixture, DiscreteMixtureCounts}
 
 class SparseLDAInferencer(
     val zDomain:DiscreteDomain,
