@@ -41,7 +41,7 @@ object Proportions {
   /** Return a zero-mass Proportions with the same dimensionality and sparsity as the Tensor argument. */
   def blankCopy(t:Tensor1): Proportions1 = t match {
     case t:DenseTensor1 => new DenseProportions1(t.dim1)
-    case t:SparseTensor1 => throw new Error("Not yet implemeneted")
+    case t:SparseTensor1 => throw new Error("Not yet implemented")
   }
   def blankCopy(t:Tensor2): Proportions2 = t match {
     case t:DenseTensor2 => new DenseProportions2(t.dim1, t.dim2)
