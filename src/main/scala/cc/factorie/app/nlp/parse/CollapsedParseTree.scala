@@ -346,7 +346,7 @@ class CollapsedParseTree(val parseTree:TokenParseTree) extends ParseTree2 with I
         val labelString = parent.token.lemmaString
         parent = parseTree.parent(parent.token.positionInSentence).vertex
         new ParseTreeLabel2(this, labelString)
-        } else new ParseTreeLabel2(this, l)
+      } else new ParseTreeLabel2(this, l)
       if(parent != null) {
         try {
           val parentIdx = idxMap.getOrElse(parent.token, idxMap(phraseTokens(parent.token)))
