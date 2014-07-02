@@ -59,6 +59,7 @@ trait SeqGeneratingFactor extends DirectedFactor {
 //used for efficient sampling of sequence variables with child factors
 trait SeqParentFactor extends DirectedFactor {
   require(parents.count(_.isInstanceOf[SeqVar[_]]) == 1)
+  def updateCollapsedParentsForParentIdx(weight: Double, idx: Int): Boolean = throw new Error(factorName + ": Collapsing parent at specified idx not implemented in " + this.getClass.getName)
   def proportionalForParentIndex(idx:Int):Double
 }
 

@@ -24,7 +24,6 @@ import cc.factorie.variable.{Var, ProportionsVar, SortedSparseCountsProportions1
    @author Andrew McCallum */
 class Collapse(val model: DirectedModel) {
   val collapsers = new ArrayBuffer[Collapser] ++= Seq(ProportionsCollapser, ProportionsMixtureCollapser)
-
   def apply(variables: Seq[Var]): Unit = {
     val factors = model.factors(variables)
     // This next line does the collapsing
