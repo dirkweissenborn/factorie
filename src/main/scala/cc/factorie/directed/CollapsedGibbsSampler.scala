@@ -161,10 +161,10 @@ object DefaultDiscreteGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
     val candidates =
       if (samplingCandidates == null) 0 until v.domain.elementDomain.size
       else samplingCandidates.map(_.intValue)
-    val collapsedFactors = ArrayBuffer[SeqGeneratingFactor]()
-    collapsedFactors ++= childFactors.filter(f => f.parents.exists(sampler.isCollapsed)).map(_.asInstanceOf[SeqGeneratingFactor])
+    val collapsedFactors = ArrayBuffer[DirectedFactor]()
+    collapsedFactors ++= childFactors.filter(f => f.parents.exists(sampler.isCollapsed))
     if (parentFactor.isDefined && parentFactor.get.parents.exists(sampler.isCollapsed))
-      collapsedFactors += parentFactor.get.asInstanceOf[SeqGeneratingFactor]
+      collapsedFactors += parentFactor.get
     //Reusable
     val distribution = Array.ofDim[Double](candidates.length)
 
@@ -172,7 +172,7 @@ object DefaultDiscreteGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
       (0 until v.size).foreach(idx => {
         var sum = 0.0
         //update sufficient statistics
-        collapsedFactors.foreach(f => f.updateCollapsedParentsForIdx(-1.0, idx))
+        updateCollapsedParents(-1.0,idx)
         (0 until distribution.length).foreach {
           i =>
             val candidate = candidates(i)
@@ -201,8 +201,16 @@ object DefaultDiscreteGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
           else candidates(cc.factorie.maths.nextDiscrete(distribution, sum)(random))
         v.set(idx,selected)(null)
         //update sufficient statistics
-        collapsedFactors.foreach(f => f.updateCollapsedParentsForIdx(1.0, idx))
+        updateCollapsedParents(1.0,idx)
       })
+    }
+
+    def updateCollapsedParents(weight:Double, idx:Int) {
+      collapsedFactors.foreach {
+        case f: SeqGeneratingFactor if parentFactor.exists(_ == f) => f.updateCollapsedParentsForIdx(weight, idx)
+        case f: SeqParentFactor => f.updateCollapsedParentsForParentIdx(weight, idx)
+        case f: DirectedFactor => throw new Error("Factors connected to discrete sequence variables should implement either SeqGeneratingFactor (for parent factors of such) or SeqParentFactor (for child factors), to update collapsed parents efficiently!")
+      }
     }
   }
 }

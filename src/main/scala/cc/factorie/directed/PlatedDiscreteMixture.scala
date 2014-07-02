@@ -55,7 +55,8 @@ object PlatedDiscreteMixture extends DirectedFamily3[DiscreteSeqVar, Mixture[Pro
     override def updateCollapsedParentsForIdx(weight: Double, idx: Int): Boolean = {
       _2(_3(idx).intValue).incrementMasses(_1(idx).intValue, weight)(null); true
     }
-
+    //same as above
+    override def updateCollapsedParentsForParentIdx(weight: Double, idx: Int): Boolean = updateCollapsedParentsForIdx(weight, idx)
   }
 
   def newFactor(a: DiscreteSeqVar, b: Mixture[ProportionsVariable], c: DiscreteSeqVar) = Factor(a, b, c)
