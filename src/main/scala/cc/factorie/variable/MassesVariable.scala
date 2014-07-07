@@ -56,7 +56,7 @@ trait WrappedTensorMasses[A <: Tensor] extends WrappedTensor[A] with MassesWithT
   require(tensor.forallActiveElements { case (_:Int,v:Double) => v >= 0 } )
   _massTotal = tensor.sum
 
-  final override def zero(): Unit = { tensor.zero(); _massTotal = 0.0 }              //this might be a little slow
+  final override def zero(): Unit = { tensor.zero(); _massTotal = 0.0 }
   final override def +=(i:Int, v:Double): Unit = { _massTotal += v; tensor.+=(i,v)/*; assert(_massTotal >= 0.0); assert(tensor(i) >= 0.0)*/ }
   final override def update(i: Int, v: Double): Unit = {this += (i,v - this(i))}
   final override def *=(d:Double): Unit = { _massTotal *= d;  tensor*=d}

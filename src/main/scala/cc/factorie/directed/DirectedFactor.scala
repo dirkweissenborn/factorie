@@ -26,6 +26,9 @@ trait DirectedFactor extends Factor {
   //def pr(s:StatisticsType): Double
   def pr: Double
 
+  //when sampling this is more efficient than always calculating the true pr
+  def proportional:Double = pr
+
   // = pr(statistics)
   //def logpr(s:StatisticsType): Double = math.log(pr(s))
   def logpr: Double = math.log(pr)

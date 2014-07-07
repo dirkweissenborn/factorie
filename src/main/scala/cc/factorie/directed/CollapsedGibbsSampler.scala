@@ -13,6 +13,7 @@
 
 package cc.factorie.directed
 
+import cc.factorie.directed.PlatedNestedCRP
 import cc.factorie.infer._
 import scala.collection.mutable.{ArrayBuffer, HashSet}
 import cc.factorie.variable._
@@ -20,6 +21,7 @@ import scala.collection.mutable
 import cc.factorie.util.FastLogging
 import scala.Some
 import cc.factorie.la.Tensor
+import scala.util.Random
 
 /**
  * This implementation is based on a sequence of handlers, much like a chain of responsibility, from which the first one
@@ -39,7 +41,7 @@ import cc.factorie.la.Tensor
  */
 //TODO memory efficient implementation for incremental/online sampling. At the moment every collapsed variable has to be in memory before creating this sampler. - dirk
 //HACKY solution: This can be circumvented manually by collapsing new collapsed variables (e.g. theta of new LDA document) and putting them into the collapsed set, and later removing them again to stay memory efficient.
-class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, samplingCandidates: Var => Seq[Tensor] = _ => null)(implicit val random: scala.util.Random)
+class CollapsedGibbsSampler(collapse: Iterable[Var], val model: DirectedModel, samplingCandidates: MutableVar => Seq[Tensor] = _ => null)(implicit val random: scala.util.Random)
   extends Sampler[Iterable[MutableVar]] {
   var debug = false
   makeNewDiffList = false // override default in cc.factorie.Sampler
@@ -97,17 +99,17 @@ trait CollapsedGibbsSamplerHandler {
    * @param random
    * @return a closure that encapsulates basically just a sampling function, with potential configuration
    */
-  def sampler(vs:Iterable[Var], sampler:CollapsedGibbsSampler, samplingCandidates: Var => Seq[Tensor])(implicit random: scala.util.Random): CollapsedGibbsSamplerClosure
+  def sampler(vs:Iterable[MutableVar], sampler:CollapsedGibbsSampler, samplingCandidates: MutableVar => Seq[Tensor])(implicit random: scala.util.Random): CollapsedGibbsSamplerClosure
 }
 trait CollapsedGibbsSamplerClosure {
   def sample(implicit d:DiffList = null): Unit
 }
 
 //proportionals of candidates for sampling are products of all neighbouring factor proportionals
-//Can handle generally handle all discrete variables, though some might not be very efficient
+//Can handle all basic discrete variables, though some might not be very efficient
 //TODO find a way to extend this handler to support efficient sampling with MultinomialFromSeq.Factor
 object DefaultDiscreteGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
-  def sampler(vs:Iterable[Var], sampler:CollapsedGibbsSampler, samplingCandidates:Var => Seq[Tensor])(implicit random: scala.util.Random) = {
+  def sampler(vs:Iterable[MutableVar], sampler:CollapsedGibbsSampler, samplingCandidates:MutableVar => Seq[Tensor])(implicit random: scala.util.Random) = {
     try {
       if(vs.size != 1) null
       else
@@ -120,6 +122,7 @@ object DefaultDiscreteGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
       case e:java.lang.ClassCastException => throw new ClassCastException("Sampling candidates of DiscreteVar have to be of type DiscreteValue")
     }
   }
+
   class DiscreteClosure(v:MutableDiscreteVar,sampler:CollapsedGibbsSampler, samplingCandidates: Seq[DiscreteValue])(implicit random: scala.util.Random) extends CollapsedGibbsSamplerClosure {
     val model = sampler.model
     val childFactors = model.childFactors(v)
@@ -139,15 +142,16 @@ object DefaultDiscreteGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
     def sample(implicit d:DiffList = null) {
       collapsedFactors.foreach(_.updateCollapsedParents(-1.0))
       var sum = 0.0
-      (0 until distribution.length).foreach {
-        i =>
-          val candidate = candidates(i)
-          v.set(candidate)(null)
-          val pValue = parentFactor.fold(1.0)(_.pr)
-          val cValue = childFactors.foldLeft(1.0)(_ * _.pr)
-          val pr = pValue * cValue
-          sum += pr
-          distribution(i) = pr
+      var i = 0
+      while(i < distribution.length) {
+        val candidate = candidates(i)
+        v.set(candidate)(null)
+        val pValue = parentFactor.fold(1.0)(_.proportional)
+        val cValue = childFactors.foldLeft(1.0)(_ * _.proportional)
+        val pr = pValue * cValue
+        sum += pr
+        distribution(i) = pr
+        i+=1
       }
       if (sum == 0) v.set(candidates(random.nextInt(distribution.length)))(null)
       else v.set(candidates(cc.factorie.maths.nextDiscrete(distribution, sum)(random)))(null)
@@ -204,12 +208,208 @@ object DefaultDiscreteGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
         updateCollapsedParents(1.0,idx)
       })
     }
-
     def updateCollapsedParents(weight:Double, idx:Int) {
       collapsedFactors.foreach {
         case f: SeqGeneratingFactor if parentFactor.exists(_ == f) => f.updateCollapsedParentsForIdx(weight, idx)
         case f: SeqParentFactor => f.updateCollapsedParentsForParentIdx(weight, idx)
         case f: DirectedFactor => throw new Error("Factors connected to discrete sequence variables should implement either SeqGeneratingFactor (for parent factors of such) or SeqParentFactor (for child factors), to update collapsed parents efficiently!")
+      }
+    }
+  }
+}
+
+/**
+ * This handler is specifically designed for working with nested chinese restaurant processes. It efficiently samples a new path, given
+ * the current level assignments, only considering paths to the maximum level of all level variables. If an inner node is sampled, a new path
+ * to the maximum depth starting at the sampled inner node is created.
+ * Following http://cs.brown.edu/courses/csci2950-p/fall2011/lectures/2011-10-25_bryantWang.pdf & http://www.cs.cmu.edu/~cchua/papers/amazon_appendix.pdf
+ */
+object NestedCRPCollapsedGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
+  override def sampler(vs: Iterable[MutableVar], sampler: CollapsedGibbsSampler, samplingCandidates: (MutableVar) => Seq[Tensor])(implicit random: Random) = {
+    try {
+      if(vs.size != 1 || !sampler.model.childFactors(vs.head).exists(_.isInstanceOf[PlatedNestedCRP.Factor])) null
+      else
+        vs.head match {
+          case v:TreePathVar => new Closure(v,sampler,samplingCandidates(v).asInstanceOf[Seq[TreePath]])
+          case v:MutableSeqVar[IntegerVar] => new LevelClosure(v,sampler,samplingCandidates(v).asInstanceOf[Seq[Int]])
+          case _ => null
+        }
+    } catch {
+      case e:java.lang.ClassCastException => throw new ClassCastException("Sampling candidates of DiscreteVar have to be of type DiscreteValue")
+    }
+  }
+
+  class Closure(v:TreePathVar,sampler:CollapsedGibbsSampler, samplingCandidates: Seq[DiscreteValue])(implicit random: scala.util.Random) extends CollapsedGibbsSamplerClosure {
+    val model = sampler.model
+    val (allCrpFactors, childFactors) = model.childFactors(v).partition(_.isInstanceOf[PlatedNestedCRP.Factor])
+    val parentFactor = model.getParentFactor(v)
+    val collapsedFactors = ArrayBuffer[DirectedFactor]()
+    collapsedFactors ++= childFactors.filter(f => f.parents.exists(sampler.isCollapsed))
+    if (parentFactor.isDefined && parentFactor.get.parents.exists(sampler.isCollapsed))
+      collapsedFactors += parentFactor.get
+    val candidates =
+      if (samplingCandidates == null) 0 until v.domain.size
+      else samplingCandidates.map(_.intValue)
+    //This is needed if this TreePathVar is part of different factor families in the model (one family <-> one mixture variable)
+    val nCrpFactorsByMixture = allCrpFactors.groupBy(_.asInstanceOf[PlatedNestedCRP.Factor].mixture)
+    //reusable
+    val distribution = Array.ofDim[Double](candidates.size)
+
+    def sample(implicit d: DiffList = null) {
+      collapsedFactors.foreach(_.updateCollapsedParents(-1.0))
+      var sum = 0.0
+      // calculate level to feature counts which are needed for sampling, for each nCRP family in the model
+      // level -> features -> counts; feature=-1 contains total local count of level
+      val levelFeatureCounts = nCrpFactorsByMixture.mapValues(_.foldLeft(mutable.Map[Int, mutable.Map[Int, Int]]())((counts,factor) => {
+        val f = factor.asInstanceOf[PlatedNestedCRP.Factor]
+        val feature = f.child.intValue
+        val levels = f.levels
+        levels.foreach(level => {
+          val levelCounts = counts.getOrElseUpdate(level.intValue, mutable.Map[Int, Int](-1 -> 0))
+          levelCounts(-1) += 1
+          levelCounts += feature -> (1 + levelCounts.getOrElse(feature, 0))
+        })
+        counts
+      }))
+      val maxLevel = allCrpFactors.foldLeft(0)((max,f)=> math.max(f.asInstanceOf[PlatedNestedCRP.Factor].levels.value.maxBy(_.value).value,max))
+      //pre-calculate path priors if possible, because their calculation is recursive it is better to pre-calculate them
+      val getParentScore:()=>Double = parentFactor match {
+        case Some(nCrpPrior:NestedCRPPrior.Factor) =>
+          val nCRPCounts = nCrpPrior._2.asInstanceOf[NestedCRPCountsVariable].value
+          val probs = nCRPCounts.prs(maxLevel)
+          () => v.value.depth match {
+            case d:Int if d == maxLevel => probs(v.intValue)
+            case _ => probs(v.intValue) * nCRPCounts.gamma / (nCRPCounts(v.intValue)+nCRPCounts.gamma) // because we need to create a new path of length maxLength if this partial path gets sampled
+          }
+        case _ => () => parentFactor.fold(1.0)(_.proportional)
+      }
+      var i = 0
+      while(i < distribution.length) {
+        val candidate = candidates(i)
+        v.set(candidate)(null)
+        if(v.value.depth > maxLevel) distribution(i) = 0.0
+        else {
+          val pValue = getParentScore()
+          val cValue = childFactors.foldLeft(1.0)(_ * _.proportional)
+          val nCRPValue = nCrpFactorsByMixture.foldLeft(1.0) { case (totalProduct, (mixture, nCrpFactors)) =>
+            //needed for sampling potential new paths
+            val uniformProportions = new MassesProportions1({mixture.head.value match {
+              case withPrior: DirichletPrior if withPrior.prior != null => withPrior.prior.asInstanceOf[Masses1]
+              case m: Proportions1 => new UniformMasses1(m.dim1, 0.0)
+              case _ => throw new IllegalArgumentException("Mixture over 1-dimensional proportions needed for CRP Factors")//will never be the case
+            }})
+            //Basically for each feature-assignment pair we need to calculate gamma of global+local divided by gamma of global count (+ prior)
+            //=> (global+prior)*(global+prior+1)*...*(global+prior+local-1)
+            totalProduct * levelFeatureCounts(mixture).foldLeft(1.0) {
+              case (product, (level, counts)) =>
+                val assignment = v.value.valueAtLevel(level) //gives -1 if level is below this paths level
+                var i = 0
+                val m = if (assignment >= 0) mixture(assignment).value else uniformProportions //sample from uniformProps if this node in the tree is new
+                product * counts.foldLeft(1.0) { case (innerProduct, (feature, count)) =>
+                  val globalCount =
+                    if (feature == -1) m.massTotal + { m match {
+                      case withPrior: DirichletPrior if withPrior.prior != null => withPrior.prior.massTotal
+                      case _ => 0.0
+                    }}
+                    else m.masses(feature) + { m match {
+                      case withPrior: DirichletPrior if withPrior.prior != null => withPrior.prior(feature)
+                      case _ => 0.0
+                    }}
+                  var p = 1.0
+                  while (i < count) {
+                    p *= (globalCount + i)
+                    i += 1
+                  }
+                  if (feature < 0) innerProduct / p
+                  else innerProduct * p
+                }
+            }
+          }
+          val pr = pValue * cValue * nCRPValue
+          sum += pr
+          distribution(i) = pr
+        }
+        i+=1
+      }
+      val selectedIdx = if (sum == 0) candidates(random.nextInt(distribution.length))
+                        else candidates(cc.factorie.maths.nextDiscrete(distribution, sum)(random))
+      var selected = v.domain.apply(selectedIdx)
+      while(selected.depth < maxLevel) selected = v.domain.newTreePath(selected)
+      v.set(selected)(null)
+      collapsedFactors.foreach(_.updateCollapsedParents(1.0))
+    }
+  }
+
+  class LevelClosure(vs:MutableSeqVar[MutableIntegerVar],sampler:CollapsedGibbsSampler, samplingCandidates: Seq[Int])(implicit random: scala.util.Random) extends CollapsedGibbsSamplerClosure {
+    val model = sampler.model
+    val (allCrpFactors, childFactors) = model.childFactors(vs).partition(_.isInstanceOf[PlatedNestedCRP.Factor])
+    require(allCrpFactors.size <= 1)
+    val parentFactor = model.getParentFactor(vs).get.asInstanceOf[PlatedStickBreakingProcess.Factor]
+    val collapsedFactors = ArrayBuffer[DirectedFactor]()
+    collapsedFactors ++= childFactors.filter(f => f.parents.exists(sampler.isCollapsed))
+    if (parentFactor.parents.exists(sampler.isCollapsed))
+      collapsedFactors += parentFactor
+
+    val nCrpFactor = allCrpFactors.head.asInstanceOf[PlatedNestedCRP.Factor]
+
+    //sample in 2 stages: 1st from all levels up to maximum level of current tree path + 1 level deeper -> if deeper is sampled, sample from bernoulli to go even deeper (create new paths if necessary)
+    def sample(implicit d:DiffList = null) {
+      val maxLevel = nCrpFactor.path.value.depth
+      //pre-calculate path priors, because their calculation is recursive it is better to pre-calculate them
+      val getParentScore:(Int)=>Double = {
+          val props = parentFactor.probabilitiesForLevels(maxLevel)
+          idx => props(parentFactor.child(idx).intValue)
+      }
+      val distribution = new Array[Int](maxLevel + 2)
+      (0 until vs.length).foreach(idx => {
+        updateCollapsedParents(-1.0,idx)
+        val v = vs(idx)
+        var candidateLevel = 0
+        var childSum = 0.0
+        while(candidateLevel < distribution.length - 1) {
+          v.set(candidateLevel)(null)
+          val cValue = childFactors.foldLeft(1.0) {
+            case (acc: Double, f: SeqParentFactor) => acc * f.proportionalForParentIndex(idx)
+            //Defaults that could potentially be very slow if we are sampling a SeqVar
+            case (acc: Double, f: DirectedFactor) => acc * f.pr
+          }
+          val pValue = getParentScore(idx)
+          val prob = cValue * pValue
+          distribution(candidateLevel) = prob
+          childSum+=cValue
+          candidateLevel+=1
+        }
+        //divide distribution by childSum to get the real probability for each candidate depth
+        (0 until distribution.length).foreach(i => distribution(i)/=childSum)
+        //probability to go deeper is the leftover probability
+        distribution(maxLevel+1) = 0.0
+        distribution(maxLevel+1) = 1.0-distribution.sum
+        var selectedLevel =
+          if (sum == 0) random.nextInt(distribution.length)
+          else cc.factorie.maths.nextDiscrete(distribution)(random)
+        if(selectedLevel == maxLevel+1) {
+          //Sample new paths depth with stick-breaking -> m*(1-m)^depth
+          var pr = f.m.doubleValue
+          var r = random.nextDouble()
+          var selectedPath = nCrpFactor.path.domain.newTreePath(nCrpFactor.path.value)
+          while(r > pr) {
+            //Create a new path in the nCRP tree
+            selectedPath = nCrpFactor.path.domain.newTreePath(selectedPath)
+            nCrpFactor.path.set(selectedPath)(null)
+            selectedLevel+=1
+            r -= pr
+            pr*=(1.0-pr)
+          }
+        }
+        v.set(selectedLevel)(null)
+        updateCollapsedParents(1.0,idx)
+      })
+    }
+    def updateCollapsedParents(weight:Double, idx:Int) {
+      collapsedFactors.foreach {
+        case f: SeqGeneratingFactor if parentFactor == f => f.updateCollapsedParentsForIdx(weight, idx)
+        case f: SeqParentFactor => f.updateCollapsedParentsForParentIdx(weight, idx)
+        case f: DirectedFactor => throw new Error("Factors connected to sequence variables should implement either SeqGeneratingFactor (for parent factors of such) or SeqParentFactor (for child factors), to update collapsed parents efficiently!")
       }
     }
   }
