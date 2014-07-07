@@ -15,7 +15,7 @@ package cc.factorie.directed
 
 import cc.factorie._
 import cc.factorie.model._
-import cc.factorie.variable.{MutableVar, Var}
+import cc.factorie.variable.{SeqVar, MutableVar, Var}
 
 trait DirectedFactor extends Factor {
   type ChildType <: Var
@@ -56,7 +56,19 @@ class GeneratedMutableVarWrapper[V<:MutableVar](val v:V) {
   }
 }
 
+//used for efficient sampling of sequence variables with parent factors
+trait SeqGeneratingFactor extends DirectedFactor {
+  type ChildType <: SeqVar[_]
+  def updateCollapsedParentsForIdx(weight: Double, idx: Int): Boolean = throw new Error(factorName + ": Collapsing parent at specified idx not implemented in " + this.getClass.getName)
+  def proportionalForChildIndex(idx:Int):Double
+}
 
+//used for efficient sampling of sequence variables with child factors
+trait SeqAsParentFactor extends DirectedFactor {
+  require(parents.count(_.isInstanceOf[SeqVar[_]]) == 1)
+  def updateCollapsedParentsForParentIdx(weight: Double, idx: Int): Boolean = throw new Error(factorName + ": Collapsing parent at specified idx not implemented in " + this.getClass.getName)
+  def proportionalForParentIndex(idx:Int):Double
+}
 
 trait RealGeneratingFactor extends DirectedFactor {
   def sampleDouble: Double

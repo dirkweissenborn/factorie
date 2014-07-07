@@ -12,33 +12,53 @@
    limitations under the License. */
 
 
-
 package cc.factorie.directed
-import cc.factorie._
 
-/** A collection of discrete counts generated according a multinomial distribution. */
-// TODO Should this also inherit from DiscreteVars?
-// Or perhaps instead of Masses should be a separate Counts variable that inherits form DiscreteVars, and then this should inherit from Counts?
+import cc.factorie.variable.{DiscreteValue, DiscreteSeqVar, DiscreteVar}
+import scala.util.Random
+import scala.collection.mutable
 
-/*
-trait MultinomialVar extends Masses with GeneratedVar {
-  def proportions: Proportions
-  proportions.addChild(this)(null)
-  def parents: Seq[Parameter] = List(proportions)
-  def logprFrom(p:Proportions): Double = activeDomain.foldLeft(0.0)((sum:Double, i:Int) => sum + apply(i) * proportions.logpr(i))
-  def pr: Double = math.exp(logpr)
-  def prFrom(parents:Seq[Parameter]): Double = logprFrom(parents)
-  def sampleFrom(proportions:Proportions)(implicit d:DiffList) = throw new Error("Not yet implemented")
-  def sampleFromParents(implicit d:DiffList = null): this.type = { sampleFrom(proportions); this }
-  def sampleFrom(parents:Seq[Variable])(implicit d:DiffList): this.type = {
-    parents match { case Seq(p:Proportions) => sampleFrom(p) }
-    this
+/**
+ * @author dirkweissenborn
+ */
+//Used for example in the entity topic model as entity to assignment count (An Entity-Topic Model for Entity Linking. X. Han and L. Sun)
+object MultinomialFromSeq extends DirectedFamily2[DiscreteVar, DiscreteSeqVar] {
+
+  case class Factor(override val _1: DiscreteVar, override val _2: DiscreteSeqVar) extends super.Factor(_1, _2) with DiscreteGeneratingFactor with SeqAsParentFactor {
+    def pr(child: DiscreteVar#Value, seq: DiscreteSeqVar#Value) = seq.count(_.intValue == child.intValue).toDouble / seq.size
+    // there is no efficient way of calculating the proportional if only parent at index changes, chaching can help here
+    def proportionalForParentIndex(idx: Int) = _2.count(_.intValue == _1.intValue).toDouble
+    override def prValue(intValue: Int): Double = _2.count(_.intValue == intValue).toDouble / _2.size
+    def sampledValue(p1: DiscreteSeqVar#Value)(implicit random: Random) = _1.domain.apply(p1(random.nextInt(p1.size)).intValue).asInstanceOf[DiscreteVar#Value]
+  }
+  def newFactor(a: DiscreteVar, b: DiscreteSeqVar) = {
+    if (a.domain.size != b.domain.elementDomain.size) throw new Error("Discrete child domain size different from parent element domain size.")
+    Factor(a, b)
   }
 }
-*/
 
-/*class SparseMultinomial(theProportions:Proportions) extends SparseCounts(theProportions.size) with Multinomial {
-  def this(p:Proportions, occurrences:Seq[Int]) = { this(p); occurrences.foreach(increment(_, 1.0)) }
-  def proportions = theProportions
+object PlatedMultinomialFromSeq extends DirectedFamily2[DiscreteSeqVar, DiscreteSeqVar] {
+
+  case class Factor(override val _1: DiscreteSeqVar, override val _2: DiscreteSeqVar) extends super.Factor(_1, _2) with SeqGeneratingFactor {
+    def proportionalForChildIndex(idx: Int) = _2.count(_.intValue == _2(idx).intValue).toDouble
+    def prValue(intValue: Int, parent: DiscreteSeqVar): Double = parent.count(_.intValue == intValue).toDouble / parent.size
+    def pr(children: DiscreteSeqVar#Value, parent: DiscreteSeqVar#Value) = {
+      val counts = mutable.HashMap[Int, Double]()
+      parent.foreach(value => counts += value.intValue -> (1.0 + counts.getOrElse(value.intValue, 0.0)))
+      val size = parent.size.toDouble
+      children.foldLeft(1.0)((acc, child) => acc * counts(child.intValue) / size)
+    }
+    def sampledValue(p1: DiscreteSeqVar#Value)(implicit random: Random) = {
+      val clone = IndexedSeq[DiscreteValue]()
+      (0 until _1.length).foreach(_ => {
+        val dom = _1.domain.elementDomain
+        clone.+:(dom(p1(random.nextInt(p1.size)).intValue))
+      })
+      clone.asInstanceOf[DiscreteSeqVar#Value]
+    }
+  }
+  def newFactor(a: DiscreteSeqVar, b: DiscreteSeqVar) = {
+    if (a.domain.elementDomain.size != b.domain.elementDomain.size) throw new Error("Discrete child domain size different from parent element domain size.")
+    Factor(a, b)
+  }
 }
-*/

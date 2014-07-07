@@ -15,18 +15,18 @@ import cc.factorie._
 import cc.factorie.directed._
 import cc.factorie.util.DoubleSeq
 import scala.Array
-import cc.factorie.directed.{DirectedModel, PlatedCategoricalMixture, DiscreteMixtureCounts}
+import cc.factorie.directed.{DirectedModel, PlatedDiscreteMixture, DiscreteMixtureCounts}
 import cc.factorie.variable.{ProportionsVar, DiscreteSeqVariable, DiscreteDomain, CategoricalDomain}
 
 class SparseLDAInferencer(
     val zDomain:DiscreteDomain,
     val wordDomain:CategoricalDomain[String],
-    var phiCounts:DiscreteMixtureCounts[String],
+    var phiCounts:DiscreteMixtureCounts,
     initialAlphas:DoubleSeq,
     initialBeta1:Double,
     model:DirectedModel,
     random: scala.util.Random,
-    val localPhiCounts: DiscreteMixtureCounts[String] = null)
+    val localPhiCounts: DiscreteMixtureCounts = null)
 {
   var verbosity = 0
   var smoothingOnlyCount = 0; var topicBetaCount = 0; var topicTermCount = 0 // Just diagnostics
@@ -116,7 +116,7 @@ class SparseLDAInferencer(
     //smoothingMass = recalcSmoothingMass
     //assert(smoothingMass > 0.0)
     //println("process doc "+zs.words.asInstanceOf[Document].file)
-    val ws = model.childFactors(zs).head.asInstanceOf[PlatedCategoricalMixture.Factor]._1 //words
+    val ws = model.childFactors(zs).head.asInstanceOf[PlatedDiscreteMixture.Factor]._1 //words
     //assert(ws.length == zs.length)
     // r = sum_t ( \beta n_{t|d} ) ( n_t + |V| \beta )  [Mimno "Sparse LDA"]
     var topicBetaMass = 0.0
@@ -375,7 +375,7 @@ object SparseLDAInferencer {
     val phiCounts = new DiscreteMixtureCounts(wordDomain, zDomain)
 
     for (doc <- docs)
-      phiCounts.incrementFactor(model.parentFactor(doc.ws).asInstanceOf[PlatedCategoricalMixture.Factor], 1)
+      phiCounts.incrementFactor(model.parentFactor(doc.ws).asInstanceOf[PlatedDiscreteMixture.Factor], 1)
 
     new SparseLDAInferencer(zDomain, wordDomain, phiCounts, initialAlphas, initialBeta1, model, random)
   }

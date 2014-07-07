@@ -25,7 +25,7 @@ import cc.factorie.variable._
 // For factors between a Mixture and the child generated from that Mixture
 trait MixtureFactor extends DirectedFactor {
   //type ChildType <: MixtureGeneratedVar
-  def gate: DiscreteVariable
+  def gate: DiscreteVar
   //def prChoosing(s:StatisticsType, mixtureIndex:Int): Double
   //def prChoosing(mixtureIndex:Int): Double = prChoosing(statistics, mixtureIndex)
   //def logprChoosing(s:StatisticsType, mixtureIndex:Int): Double = math.log(prChoosing(s, mixtureIndex))

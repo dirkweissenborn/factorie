@@ -13,9 +13,6 @@
 
 package cc.factorie.directed
 
-import cc.factorie._
-import cc.factorie.util.DoubleSeq
-import scala.collection.mutable.ArrayBuffer
 import cc.factorie.variable._
 
 /*
@@ -25,42 +22,26 @@ trait PlatedDiscreteGeneratingFactor extends DirectedFactor {
 }
 */
 
-object PlatedDiscrete extends DirectedFamily2[DiscreteSeqVariable,ProportionsVariable] {
+object PlatedDiscrete extends DirectedFamily2[DiscreteSeqVar,ProportionsVariable] {
   self =>
   //def pr(ds:Seq[DiscreteValue], p:IndexedSeq[Double]): Double = ds.map(dv => p(dv.intValue)).product
-  def pr(ds:DiscreteSeqVariable#Value, p:Proportions): Double = ds.map(dv => p(dv.intValue)).product // TODO Make this more efficient; this current boxes
-  def logpr(ds:IndexedSeq[DiscreteValue], p:Proportions): Double = ds.map(dv => math.log(p(dv.intValue))).sum // TODO Make this more efficient
-  def sampledValue(d:DiscreteDomain, length:Int, p:Proportions)(implicit random: scala.util.Random): IndexedSeq[DiscreteValue] =
-    Vector.fill(length)(d.apply(p.sampleIndex))
-  case class Factor(override val _1:DiscreteSeqVariable, override val _2:ProportionsVariable) extends super.Factor(_1, _2) {
-    def pr(child:DiscreteSeqVariable#Value, p:Proportions): Double = self.pr(child, p)
+  def pr(ds:DiscreteSeqVar#Value, p:Proportions): Double = ds.foldLeft(1.0)((acc, dv) => acc * p(dv.intValue)) //this does not box, because foldLeft over actual objects and not primitive types
+  def logpr(ds:DiscreteSeqVar#Value, p:Proportions): Double = ds.foldLeft(0.0)((acc, dv) => acc + math.log(p(dv.intValue)))
+  def sampledValue(d:DiscreteDomain, length:Int, p:Proportions)(implicit random: scala.util.Random): DiscreteSeqVar#Value =
+    Vector.fill(length)(d.apply(p.sampleIndex)).asInstanceOf[DiscreteSeqVar#Value]
+  case class Factor(override val _1:DiscreteSeqVar, override val _2:ProportionsVariable) extends super.Factor(_1, _2) with SeqGeneratingFactor {
+    def proportionalForChildIndex(idx: Int) = _2.value.apply(_1.intValue(idx))
+    def pr(child:DiscreteSeqVar#Value, p:Proportions): Double = self.pr(child, p)
     //override def logpr(s:Statistics): Double = self.logpr(s._1, s._2)
-    override def sampledValue(implicit random: scala.util.Random): IndexedSeq[DiscreteValue] = self.sampledValue(_1.domain.elementDomain, _1.length, _2.value) // Avoid creating a Statistics
-    def sampledValue(p:Proportions)(implicit random: scala.util.Random): IndexedSeq[DiscreteValue] = {
-      if (_1.length == 0) IndexedSeq[DiscreteValue]()
+    override def sampledValue(implicit random: scala.util.Random): DiscreteSeqVar#Value = self.sampledValue(_1.domain.elementDomain, _1.length, _2.value) // Avoid creating a Statistics
+    def sampledValue(p:Proportions)(implicit random: scala.util.Random): DiscreteSeqVar#Value = {
+      if (_1.length == 0) IndexedSeq[DiscreteValue]().asInstanceOf[DiscreteSeqVar#Value]
       else self.sampledValue(_1.domain.elementDomain, _1.length, p)
     }
-    def updateCollapsedParents(index:Int, weight:Double): Boolean = { _2.value.+=(_1(index).intValue, weight); true }
-  }
-  def newFactor(a:DiscreteSeqVariable, b:ProportionsVariable) = Factor(a, b)
-}
-
-object PlatedCategorical extends DirectedFamily2[CategoricalSeqVariable[String],ProportionsVariable] {
-  self =>
-  //def pr(ds:Seq[CategoricalValue], p:IndexedSeq[Double]): Double = ds.map(dv => p(dv.intValue)).product
-  def pr(ds:IndexedSeq[CategoricalValue[String]], p:Proportions): Double = ds.map(dv => p(dv.intValue)).product // TODO Make this more efficient; this current boxes
-  def logpr(ds:IndexedSeq[CategoricalValue[String]], p:Proportions): Double = ds.map(dv => math.log(p(dv.intValue))).sum // TODO Make this more efficient
-  def sampledValue(d:CategoricalDomain[String], length:Int, p:Proportions)(implicit random: scala.util.Random): IndexedSeq[CategoricalValue[String]] =
-    Vector.fill(length)(d.apply(p.sampleIndex))
-  case class Factor(override val _1:CategoricalSeqVariable[String], override val _2:ProportionsVariable) extends super.Factor(_1, _2) {
-    def pr(child:IndexedSeq[CategoricalValue[String]], p:Proportions): Double = self.pr(child, p)
-    //override def logpr(s:Statistics): Double = self.logpr(s._1, s._2)
-    override def sampledValue(implicit random: scala.util.Random): CategoricalSeqVariable[String]#Value = self.sampledValue(_1.head.domain, _1.length, _2.value) // Avoid creating a Statistics
-    def sampledValue(p:Proportions)(implicit random: scala.util.Random): IndexedSeq[CategoricalValue[String]] = {
-      if (_1.length == 0) IndexedSeq[CategoricalValue[String]]()
-      else self.sampledValue(_1.head.domain, _1.length, p)
+    override def updateCollapsedParentsForIdx(weight: Double, idx: Int): Boolean = {
+      _2.incrementMasses(_1(idx).intValue, weight)(null); true
     }
     def updateCollapsedParents(index:Int, weight:Double): Boolean = { _2.value.+=(_1(index).intValue, weight); true }
   }
-  def newFactor(a:CategoricalSeqVariable[String], b:ProportionsVariable) = Factor(a, b)
+  def newFactor(a:DiscreteSeqVar, b:ProportionsVariable) = Factor(a, b)
 }

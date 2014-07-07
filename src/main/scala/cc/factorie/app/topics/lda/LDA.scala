@@ -69,7 +69,7 @@ class LDA(val wordSeqDomain: CategoricalSeqDomain[String], numTopics: Int = 10, 
       require(doc.zs.domain.elementDomain.size == numTopics, "zs.domain.elementDomain.size=%d != numTopics=%d".format(doc.zs.domain.elementDomain.size, numTopics))
     }
     doc.zs.~(PlatedDiscrete(doc.theta))(m)
-    doc.ws.~(PlatedCategoricalMixture(phis, doc.zs))(m)
+    doc.ws.~(PlatedDiscreteMixture(phis, doc.zs))(m)
   }
 
   /** Add a document to the LDA model. */
@@ -153,10 +153,10 @@ class LDA(val wordSeqDomain: CategoricalSeqDomain[String], numTopics: Int = 10, 
 
     //Get global Nt and Nw,t for all the documents
     val phiCounts = new DiscreteMixtureCounts(wordDomain, ZDomain)
-    for (doc <- documents) phiCounts.incrementFactor(model.parentFactor(doc.ws).asInstanceOf[PlatedCategoricalMixture.Factor], 1)
+    for (doc <- documents) phiCounts.incrementFactor(model.parentFactor(doc.ws).asInstanceOf[PlatedDiscreteMixture.Factor], 1)
     val numTypes = wordDomain.length
 
-    val phiCountsArray = new Array[DiscreteMixtureCounts[String]](numThreads)
+    val phiCountsArray = new Array[DiscreteMixtureCounts](numThreads)
     val samplersArray = new Array[SparseLDAInferencer](numThreads)
 
     //Copy the counts to each thread
@@ -167,7 +167,7 @@ class LDA(val wordSeqDomain: CategoricalSeqDomain[String], numTopics: Int = 10, 
         val localPhiCounts = new DiscreteMixtureCounts(wordDomain, ZDomain)
         for (w <- 0 until numTypes) phiCounts(w).forCounts((t,c) => phiCountsArray(threadID).increment(w, t, c))
 
-        for (doc <- docSubsets(threadID)) localPhiCounts.incrementFactor(model.parentFactor(doc.ws).asInstanceOf[PlatedCategoricalMixture.Factor], 1)
+        for (doc <- docSubsets(threadID)) localPhiCounts.incrementFactor(model.parentFactor(doc.ws).asInstanceOf[PlatedDiscreteMixture.Factor], 1)
         samplersArray(threadID) = new SparseLDAInferencer(ZDomain, wordDomain, phiCountsArray(threadID),  alphas.value, beta1, model, random, localPhiCounts)
       })
 

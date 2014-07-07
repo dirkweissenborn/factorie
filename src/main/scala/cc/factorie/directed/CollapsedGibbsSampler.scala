@@ -14,10 +14,9 @@
 package cc.factorie.directed
 
 import cc.factorie.infer._
-import cc.factorie._
+import cc.factorie.util.FastLogging
 import scala.collection.mutable.{HashMap, HashSet, ArrayBuffer}
 import cc.factorie.variable._
-import cc.factorie.model.Factor
 
 /** A GibbsSampler that can also collapse some Parameters. */
 class CollapsedGibbsSampler(collapse:Iterable[Var], val model:DirectedModel)(implicit val random: scala.util.Random) extends Sampler[Iterable[MutableVar]] {
@@ -26,10 +25,7 @@ class CollapsedGibbsSampler(collapse:Iterable[Var], val model:DirectedModel)(imp
   var temperature = 1.0 // TODO Currently ignored?
   val handlers = new ArrayBuffer[CollapsedGibbsSamplerHandler]
   def defaultHandlers = Seq(
-      PlatedGateDiscreteCollapsedGibbsSamplerHandler,
-      PlatedGateGategoricalCollapsedGibbsSamplerHandler,
-      GateCollapsedGibbsSamplerHandler, 
-      //PlatedMixtureChoiceCollapsedDirichletGibbsSamplerHandler,
+      new DefaultDiscreteGibbsSamplerHandler,
       GeneratedVarCollapsedGibbsSamplerHandler
       )
   handlers ++= defaultHandlers
@@ -51,13 +47,11 @@ class CollapsedGibbsSampler(collapse:Iterable[Var], val model:DirectedModel)(imp
     if (cacheClosures && v.size == 1 && closures.contains(v.head)) { 
       closures(v.head).sample(d)
     } else {
-      // Get factors, no guarantees about their order
-      val factors: Iterable[Factor] = model.factors(v)
       //println("CollapsedGibbsSampler.process1 factors = "+factors.map(_.template.getClass).mkString)
       var done = false
       val handlerIterator = handlers.iterator
       while (!done && handlerIterator.hasNext) {
-        val closure = handlerIterator.next().sampler(v, factors, this)
+        val closure = handlerIterator.next().sampler(v, this)
         if (closure ne null) {
           done = true
           closure.sample(d)
@@ -66,7 +60,7 @@ class CollapsedGibbsSampler(collapse:Iterable[Var], val model:DirectedModel)(imp
           }
         }
       }
-      if (!done) throw new Error("CollapsedGibbsSampler: No sampling method found for variable "+v+" with factors "+factors.map(_.factorName).toList.mkString)
+      if (!done) throw new Error("CollapsedGibbsSampler: No sampling method found for variable "+v+" with factors "+model.factors(v).map(_.factorName).toList.mkString)
     }
     d
   }
@@ -78,17 +72,25 @@ class CollapsedGibbsSampler(collapse:Iterable[Var], val model:DirectedModel)(imp
 
 
 trait CollapsedGibbsSamplerHandler {
-  def sampler(v:Iterable[Var], factors:Iterable[Factor], sampler:CollapsedGibbsSampler)(implicit random: scala.util.Random): CollapsedGibbsSamplerClosure
+  def sampler(v:Iterable[Var], sampler:CollapsedGibbsSampler)(implicit random: scala.util.Random): CollapsedGibbsSamplerClosure
 }
 
 trait CollapsedGibbsSamplerClosure {
   def sample(implicit d:DiffList = null): Unit
 }
 
-
+//Mixin for handlers to provide special handling for sampling candidates
+trait SelectedCandidatesCollapsedGibbsSamplerHandler {
+  def samplingCandidates(v:MutableVar):Seq[v.Value]
+}
+//Mixin for handlers to provide special handling for sampling candidates, for SeqVar
+trait PlatedSelectedCandidatesCollapsedGibbsSamplerHandler {
+  def elementSamplingCandidates[E](v:SeqVar[E]):Seq[E]
+}
 
 object GeneratedVarCollapsedGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
-  def sampler(v:Iterable[Var], factors:Iterable[Factor], sampler:CollapsedGibbsSampler)(implicit random: scala.util.Random): CollapsedGibbsSamplerClosure = {
+  def sampler(v:Iterable[Var], sampler:CollapsedGibbsSampler)(implicit random: scala.util.Random): CollapsedGibbsSamplerClosure = {
+    val factors = sampler.model.factors(v)
     if (v.size != 1 || factors.size != 1) return null
     val pFactor = factors.collectFirst({case f:DirectedFactor => f}) // TODO Yipes!  Clean up these tests!
     if (pFactor == None) return null
@@ -108,230 +110,112 @@ object GeneratedVarCollapsedGibbsSamplerHandler extends CollapsedGibbsSamplerHan
   }
 }
 
-
-
-// TODO This the "one outcome" and "one outcome parent" case for now.
-object GateCollapsedGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
-  def sampler(v:Iterable[Var], factors:Iterable[Factor], sampler:CollapsedGibbsSampler)(implicit random: scala.util.Random): CollapsedGibbsSamplerClosure = {
-    if (v.size != 1 || factors.size != 2) return null
-    //println("GateCollapsedGibbsSamplerHander: "+factors.map(_.asInstanceOf[Family#Factor].family.getClass).mkString)
-    //val gFactor = factors.collectFirst({case f:Discrete.Factor if (f.family == Discrete) => f}) // TODO Should be any DiscreteGeneratingFamily#Factor => f
-    val gFactor = factors.collectFirst({case f:DiscreteGeneratingFactor => f}) // TODO Should be any DiscreteGeneratingFamily#Factor => f
-    val mFactor = factors.collectFirst({case f:MixtureFactor => f})
-    if (gFactor == None || mFactor == None) {
-      //println("GateCollapsedGibbsSamplerHander: "+gFactor+" "+mFactor)
-      return null
+//Proportionals of candidates for sampling are products of all neighbouring factor proportionals.
+//Can basically handle all discrete variables and factors, though some factors might not be very efficient.
+//Mixin traits SelectedCandidatesCollapsedGibbsSamplerHandler or PlatedSelectedCandidatesCollapsedGibbsSamplerHandler can be used for special candidate selection.
+class DefaultDiscreteGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
+  self =>
+  def sampler(vs:Iterable[Var], sampler:CollapsedGibbsSampler)(implicit random: scala.util.Random) = {
+    try {
+      if(vs.size != 1) null
+      else
+        vs.head match {
+          case v:MutableDiscreteVar => new DiscreteClosure(v,sampler)
+          case v:MutableDiscreteSeqVar[_] => new DiscreteSeqClosure(v,sampler)
+          case _ => null
+        }
+    } catch {
+      case e:java.lang.ClassCastException => throw new ClassCastException("Sampling candidates of DiscreteVar have to be of type DiscreteValue")
     }
-    //println("GateCollapsedGibbsSamplerHandler gFactor "+gFactor.get.family.getClass)
-    //println("GateCollapsedGibbsSamplerHandler mFactor "+mFactor.get.family.getClass)
-    //println("GateCollapsedGibbsSamplerHandler factors equal "+(mFactor.get == gFactor.get))
-    new Closure(gFactor.get, sampler.isCollapsed(gFactor.get.parents.head), mFactor.get, sampler.isCollapsed(mFactor.get.parents.head))
   }
-    
-  class Closure(val gFactor:DiscreteGeneratingFactor, val gCollapsed:Boolean, val mFactor:MixtureFactor, val mCollapsed:Boolean)(implicit random: scala.util.Random) extends CollapsedGibbsSamplerClosure
-  {
-    def sample(implicit d:DiffList = null): Unit = {
-      val gate = mFactor.gate //family.child(gFactor)
-      //val gateParent = gFactor._2
-      // Remove sufficient statistics from collapsed dependencies
-      if (gCollapsed) gFactor.updateCollapsedParents(-1.0)
-      if (mCollapsed) mFactor.updateCollapsedParents(-1.0)
-      // Calculate distribution of new value
-      val mStat = mFactor.currentStatistics // TODO Are these two still necessary?
-      val gStat = gFactor.currentStatistics
-      val domainSize = gate.domain.size
-      val distribution = new Array[Double](domainSize)
+  class DiscreteClosure(v:MutableDiscreteVar,sampler:CollapsedGibbsSampler)(implicit random: scala.util.Random) extends CollapsedGibbsSamplerClosure {
+    val model = sampler.model
+    val childFactors = model.childFactors(v)
+    val parentFactor = model.getParentFactor(v)
+    val collapsedFactors = ArrayBuffer[DirectedFactor]()
+    collapsedFactors ++= childFactors.filter(f => f.parents.exists(sampler.isCollapsed))
+    if (parentFactor.isDefined && parentFactor.get.parents.exists(sampler.isCollapsed))
+      collapsedFactors += parentFactor.get
+
+    def sample(implicit d:DiffList = null) {
+      val candidates:Seq[Int] = self match {
+        case h:SelectedCandidatesCollapsedGibbsSamplerHandler => val cands = h.samplingCandidates(v); if(cands != null) cands.map(_.intValue) else 0 until v.domain.size
+        case _ => 0 until v.domain.size
+      }
+      val distribution = Array.ofDim[Double](candidates.size)
+      collapsedFactors.foreach(_.updateCollapsedParents(-1.0))
       var sum = 0.0
-      //println("GateCollapsedGibbsSamplerHandler gFactor "+gFactor.family.getClass)
-      //println("GateCollapsedGibbsSamplerHandler mFactor "+mFactor.family.getClass)
-      for (i <- 0 until domainSize) {
-        //throw new Error
-        distribution(i) = /*gStat.prValue(i) * */ 
-          gFactor.prValue(i) // * mFactor.prChoosing(i) // TODO Re-implement these methods so that they don't allocate new Statistics objects with each call
-        throw new Error("Not yet implemented")
-        sum += distribution(i)
+      (0 until distribution.length).foreach {
+        i =>
+          val candidate = candidates(i)
+          v.set(candidate)(null)
+          val pValue = parentFactor.fold(1.0)(_.pr)
+          val cValue = childFactors.foldLeft(1.0)(_ * _.pr)
+          val pr = pValue * cValue
+          sum += pr
+          distribution(i) = pr
       }
-      assert(sum == sum, "Distribution sum is NaN")
-      assert(sum != Double.PositiveInfinity, "Distrubtion sum is infinity.")
-      // Sample
-      //println("MixtureChoiceCollapsedGibbsSamplerHandler outcome="+outcome+" sum="+sum+" distribution="+(distribution.mkString(",")))
-      // sum can be zero for a new word in the domain and a non-collapsed growable Proportions has not yet placed non-zero mass there
-      if (sum == 0) gate.set(random.nextInt(domainSize))(null)
-      else gate.set(cc.factorie.maths.nextDiscrete(distribution, sum)(random))(null)
-      // Put back sufficient statistics of collapsed dependencies
-      if (gCollapsed) gFactor.updateCollapsedParents(1.0)
-      if (mCollapsed) mFactor.updateCollapsedParents(1.0)
+      if (sum == 0) v.set(candidates(random.nextInt(distribution.length)))(null)
+      else v.set(candidates(cc.factorie.maths.nextDiscrete(distribution, sum)(random)))(null)
+      collapsedFactors.foreach(_.updateCollapsedParents(1.0))
     }
   }
-}
+  class DiscreteSeqClosure(v:MutableDiscreteSeqVar[_],sampler:CollapsedGibbsSampler)(implicit random: scala.util.Random) extends CollapsedGibbsSamplerClosure with FastLogging {
+    val model = sampler.model
+    val childFactors = model.childFactors(v)
+    val parentFactor = model.getParentFactor(v)
+    val collapsedFactors = ArrayBuffer[DirectedFactor]()
+    collapsedFactors ++= childFactors.filter(f => f.parents.exists(sampler.isCollapsed))
+    if (parentFactor.isDefined && parentFactor.get.parents.exists(sampler.isCollapsed))
+      collapsedFactors += parentFactor.get
 
-object PlatedGateDiscreteCollapsedGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
-  def sampler(v:Iterable[Var], factors:Iterable[Factor], sampler:CollapsedGibbsSampler)(implicit random: scala.util.Random): CollapsedGibbsSamplerClosure = {
-    if (v.size != 1 || factors.size != 2) return null
-    val gFactor = factors.collectFirst({case f:PlatedDiscrete.Factor => f}) // TODO Should be any DiscreteGeneratingFamily#Factor => f
-    val mFactor = factors.collectFirst({case f:PlatedDiscreteMixture.Factor => f})
-    if (gFactor == None || mFactor == None) return null
-    assert(gFactor.get._1 == mFactor.get._3)
-    new Closure(sampler, gFactor.get, mFactor.get)
-  }
-    
-  class Closure(val sampler:CollapsedGibbsSampler, val gFactor:PlatedDiscrete.Factor, val mFactor:PlatedDiscreteMixture.Factor)(implicit random: scala.util.Random) extends CollapsedGibbsSamplerClosure
-  {
-    def sample(implicit d:DiffList = null): Unit = {
-      val gates = mFactor._3.asInstanceOf[DiscreteSeqVariable]
-      val domainSize = gates(0).dim1 // domain.size
-      val distribution = new Array[Double](domainSize)
-      val gParent = gFactor._2.asInstanceOf[ProportionsVariable]
-      val gParentCollapsed = sampler.isCollapsed(gParent)
-      val mixture = mFactor._2.asInstanceOf[Mixture[ProportionsVariable]]
-      val mixtureCollapsed = sampler.isCollapsed(mixture)
-      for (index <- 0 until gates.length) {
-        val outcomeIntValue = mFactor._1(index).intValue
-        // Remove sufficient statistics from collapsed dependencies
-        var z: Int = gates(index).intValue
-        if (gParentCollapsed) gParent.incrementMasses(z, -1.0)
-        if (mixtureCollapsed) mixture(z).incrementMasses(outcomeIntValue, -1.0)
-        // Calculate distribution of new value
-        //val mStat = mFactor.statistics
-        //val gStat = gFactor.statistics
+    def sample(implicit d:DiffList = null) {
+      val candidates:Seq[Int] = self match {
+        case h:PlatedSelectedCandidatesCollapsedGibbsSamplerHandler => val cands = h.elementSamplingCandidates(v); if(cands != null) cands.map(_.intValue) else 0 until v.domain.elementDomain.size
+        case _ => 0 until v.domain.elementDomain.size
+      }
+      val distribution = Array.ofDim[Double](candidates.size)
+      (0 until v.size).foreach(index => {
         var sum = 0.0
-        java.util.Arrays.fill(distribution, 0.0)
-        var i = 0
-        while (i < domainSize) {
-          distribution(i) = gParent.value(i) * mixture(i).value(outcomeIntValue)
-          sum += distribution(i)
-          i += 1
+        //update sufficient statistics
+        updateCollapsedParents(-1.0,index)
+        (0 until distribution.length).foreach {
+          i =>
+            val candidate = candidates(i)
+            v.set(index, candidate)(null)
+            val pValue = parentFactor match {
+              //Fast because it only calculates probability for current index
+              case Some(f: SeqGeneratingFactor) => f.proportionalForChildIndex(index)
+              //Defaults that could potentially be very slow if we are sampling a SeqVar (e.g., above two cases)
+              case Some(f: DirectedFactor) =>
+                logger.warn(s"Sampling DiscreteSeqVar using ${f.getClass} could be slow. ${f.getClass} should inherit from DiscreteSeqGeneratingFactor!")
+                f.pr
+              case None => 1.0
+            }
+            val cValue = childFactors.foldLeft(1.0) {
+              //useful for PlatedDiscreteMixture
+              case (acc: Double, f: SeqAsParentFactor) => acc * f.proportionalForParentIndex(index)
+              //Defaults that could potentially be very slow if we are sampling a SeqVar
+              case (acc: Double, f: DirectedFactor) => acc * f.pr
+            }
+            val pr = pValue * cValue
+            sum += pr
+            distribution(i) = pr
         }
-        assert(sum == sum, "Distribution sum is NaN")
-        assert(sum != Double.PositiveInfinity, "Distrubtion sum is infinity.")
-        // Sample
-        // sum can be zero for a new word in the domain and a non-collapsed growable Proportions has not yet placed non-zero mass there
-        if (sum == 0) z = random.nextInt(domainSize)
-        else z = cc.factorie.maths.nextDiscrete(distribution, sum)(random)
-        gates.set(index, z)(null)
-        // Put back sufficient statistics of collapsed dependencies
-        if (gParentCollapsed) gParent.incrementMasses(z, 1.0)
-        if (mixtureCollapsed) mixture(z).incrementMasses(outcomeIntValue, 1.0)
+        val selected =
+          if (sum == 0)  candidates(random.nextInt(candidates.length))
+          else candidates(cc.factorie.maths.nextDiscrete(distribution, sum)(random))
+        v.set(index,selected)(null)
+        //update sufficient statistics
+        updateCollapsedParents(1.0,index)
+      })
+    }
+    def updateCollapsedParents(weight:Double, idx:Int) {
+      collapsedFactors.foreach {
+        case f: SeqGeneratingFactor if parentFactor.exists(_ == f) => f.updateCollapsedParentsForIdx(weight, idx)
+        case f: SeqAsParentFactor => f.updateCollapsedParentsForParentIdx(weight, idx)
+        case f: DirectedFactor => throw new Error("Factors connected to discrete sequence variables should implement either SeqGeneratingFactor (for parent factors of such) or SeqParentFactor (for child factors), to update collapsed parents efficiently!")
       }
     }
   }
 }
-
-
-
-object PlatedGateGategoricalCollapsedGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
-  def sampler(v:Iterable[Var], factors:Iterable[Factor], sampler:CollapsedGibbsSampler)(implicit random: scala.util.Random): CollapsedGibbsSamplerClosure = {
-    if (v.size != 1 || factors.size != 2) return null
-    val gFactor = factors.collectFirst({case f:PlatedDiscrete.Factor => f}) // TODO Should be any DiscreteGeneratingFamily#Factor => f
-    val mFactor = factors.collectFirst({case f:PlatedCategoricalMixture.Factor => f})
-    if (gFactor == None || mFactor == None) return null
-    assert(gFactor.get._1 == mFactor.get._3)
-    new Closure(sampler, gFactor.get, mFactor.get)
-  }
-
-  class Closure(val sampler:CollapsedGibbsSampler, val gFactor:PlatedDiscrete.Factor, val mFactor:PlatedCategoricalMixture.Factor)(implicit random: scala.util.Random) extends CollapsedGibbsSamplerClosure
-  {
-    def sample(implicit d:DiffList = null): Unit = {
-      val gates = mFactor._3.asInstanceOf[DiscreteSeqVariable]
-      val domainSize = gates(0).dim1 // domain.size
-      val distribution = new Array[Double](domainSize)
-      val gParent = gFactor._2.asInstanceOf[ProportionsVariable]
-      val gParentCollapsed = sampler.isCollapsed(gParent)
-      val mixture = mFactor._2.asInstanceOf[Mixture[ProportionsVariable]]
-      val mixtureCollapsed = sampler.isCollapsed(mixture)
-      for (index <- 0 until gates.length) {
-        val outcomeIntValue = mFactor._1(index).intValue
-        // Remove sufficient statistics from collapsed dependencies
-        var z: Int = gates(index).intValue
-        if (gParentCollapsed) gParent.incrementMasses(z, -1.0)
-        if (mixtureCollapsed) mixture(z).incrementMasses(outcomeIntValue, -1.0)
-        // Calculate distribution of new value
-        //val mStat = mFactor.statistics
-        //val gStat = gFactor.statistics
-        var sum = 0.0
-        java.util.Arrays.fill(distribution, 0.0)
-        var i = 0
-        while (i < domainSize) {
-          distribution(i) = gParent.value(i) * mixture(i).value(outcomeIntValue)
-          sum += distribution(i)
-          i += 1
-        }
-        assert(sum == sum, "Distribution sum is NaN")
-        assert(sum != Double.PositiveInfinity, "Distrubtion sum is infinity.")
-        // Sample
-        // sum can be zero for a new word in the domain and a non-collapsed growable Proportions has not yet placed non-zero mass there
-        if (sum == 0) z = random.nextInt(domainSize)
-        else z = cc.factorie.maths.nextDiscrete(distribution, sum)(random)
-        gates.set(index, z)(null)
-        // Put back sufficient statistics of collapsed dependencies
-        if (gParentCollapsed) gParent.incrementMasses(z, 1.0)
-        if (mixtureCollapsed) mixture(z).incrementMasses(outcomeIntValue, 1.0)
-      }
-    }
-  }
-}
-
-/*
-object PlatedMixtureChoiceCollapsedDirichletGibbsSamplerHandler extends CollapsedGibbsSamplerHandler {
-  def sampler(v:Iterable[Variable], factors:Seq[Factor], sampler:CollapsedGibbsSampler): CollapsedGibbsSamplerClosure = {
-    if (v.size != 1) return null
-    v.head match {
-      case v: PlatedMixtureChoiceVar => {
-        require(v.outcomes.size == 1) // TODO write code to handle more outcomes.
-        if (! v.outcomes.head.isInstanceOf[PlatedDiscreteMixtureVar]) return null
-        require(factors.size == 2, "factors size = "+factors.size)
-        //println(factors(0)); println(factors(1))
-        val choiceFactor = factors(1).copy(sampler.collapsedMap).asInstanceOf[PlatedDiscreteTemplate#Factor]
-        val outcomeFactor = factors(0).copy(sampler.collapsedMap).asInstanceOf[PlatedDiscreteMixtureTemplate#Factor]
-        if (! outcomeFactor._2.isInstanceOf[CollapsedFiniteMixture[DirichletMultinomial]]) return null
-        val choiceParent = choiceFactor._2
-        require(outcomeFactor.numVariables == 3)
-        require(outcomeFactor.variable(1).isInstanceOf[Parameter])
-        require(outcomeFactor.variable(2).isInstanceOf[PlatedMixtureChoiceVar])
-        val outcomeParent = outcomeFactor.variable(1)
-        new Closure(v, v.outcomes.head.asInstanceOf[PlatedDiscreteMixtureVar],
-                    choiceParent match { case cp:DirichletMultinomial => cp case _ => null.asInstanceOf[DirichletMultinomial] },
-                    outcomeParent match { case cp:CollapsedFiniteMixture[DirichletMultinomial] => cp case _ => null.asInstanceOf[CollapsedFiniteMixture[DirichletMultinomial]] })
-      }
-      case _ => null
-    }
-  }
-  class Closure(val choice:PlatedMixtureChoiceVar, val outcome:PlatedDiscreteMixtureVar, 
-                val collapsedChoiceParent: DirichletMultinomial, val collapsedOutcomeParent:CollapsedFiniteMixture[DirichletMultinomial])
-  extends CollapsedGibbsSamplerClosure
-  {
-    assert(collapsedChoiceParent ne null)
-    assert(collapsedOutcomeParent ne null)
-    def sample(implicit d:DiffList = null): Unit = {
-      val choiceParent = collapsedChoiceParent
-      // Calculate distribution of new value
-      val domainSize = choice.domain.elementDomain.size
-      val seqSize = choice.length
-      val distribution = new Array[Double](domainSize)
-      forIndex(seqSize)(seqIndex => {
-        // Remove sufficient statistics from collapsed dependencies
-        var choiceIntValue = choice.intValue(seqIndex)
-        if (collapsedChoiceParent ne null) collapsedChoiceParent.incrementMasses(choiceIntValue, -1.0)
-        if (collapsedOutcomeParent ne null) collapsedOutcomeParent(choiceIntValue).incrementMasses(outcome.intValue(seqIndex), -1.0)
-        var sum = 0.0
-        forIndex(domainSize)(i => {
-          distribution(i) = collapsedChoiceParent(i) * collapsedOutcomeParent(i).pr(outcome.intValue(seqIndex))
-          sum += distribution(i)
-        })
-        assert(sum == sum, "Distribution sum is NaN")
-        assert(sum != Double.PositiveInfinity, "Distrubtion sum is infinity.")
-        // println("MixtureChoiceCollapsedDirichletGibbsSamplerHandler outcome="+outcome+" sum="+sum+" distribution="+(distribution.mkString(",")))
-        // Sample
-        // sum can be zero for a new word in the domain and a non-collapsed growable Proportions has not yet placed non-zero mass there
-        if (sum == 0) choiceIntValue = cc.factorie.random.nextInt(domainSize)
-        else choiceIntValue = cc.factorie.maths.nextDiscrete(distribution, sum)(cc.factorie.random)
-        choice.update(seqIndex, choiceIntValue)
-        // Put back sufficient statitics of collapsed dependencies
-        if (collapsedChoiceParent ne null) collapsedChoiceParent.incrementMasses(choiceIntValue, 1.0)
-        if (collapsedOutcomeParent ne null) collapsedOutcomeParent(choiceIntValue).incrementMasses(outcome.intValue(seqIndex), 1.0)
-      }
-    )}
-  }
-}
-*/
-

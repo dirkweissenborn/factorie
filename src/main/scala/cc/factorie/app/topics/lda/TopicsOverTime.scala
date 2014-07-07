@@ -32,7 +32,7 @@ object TopicsOverTime {
   object ZDomain extends DiscreteDomain(numTopics) { type Value = DiscreteValue }
   class Z(value: Int = 0) extends DiscreteVariable(value) { def domain = ZDomain }
   object WordDomain extends CategoricalDomain[String]
-  class Word(value: String) extends CategoricalVariable(value) { def domain = WordDomain; def z = model.parentFactor(this).asInstanceOf[CategoricalMixture[String]#Factor]._3 }
+  class Word(value: String) extends CategoricalVariable(value) { def domain = WordDomain; def z = model.parentFactor(this).asInstanceOf[DiscreteMixture#Factor]._3.asInstanceOf[Z] }
   class Document(val file: String) extends ArrayBuffer[Word] {
     var theta: ProportionsVariable = null
     var date: Long = -1  // datetime
@@ -57,7 +57,7 @@ object TopicsOverTime {
         for (word <- alphaSegmenter(file).map(_.toLowerCase).filter(!Stopwords.contains(_))) {
           val z = new Z :~ Discrete(doc.theta)
           val w = new Word(word)
-          CategoricalMixture.newFactor(w, phis, z)
+          DiscreteMixture.newFactor(w, phis, z)
           doc += w
           doc.stamps += new DoubleVariable ~ BetaMixture(balphas, bbetas, z)
         }

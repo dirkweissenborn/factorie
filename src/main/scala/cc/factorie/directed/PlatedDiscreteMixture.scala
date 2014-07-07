@@ -13,51 +13,39 @@
 
 package cc.factorie.directed
 
-import cc.factorie._
-import cc.factorie.util.DoubleSeq
-import scala.reflect.Manifest
-import scala.collection.mutable.{HashSet,HashMap}
-import scala.util.Random
 import cc.factorie.variable._
 
-object PlatedDiscreteMixture extends DirectedFamily3[DiscreteSeqVariable,Mixture[ProportionsVariable],DiscreteSeqVariable] {
+object PlatedDiscreteMixture extends DirectedFamily3[DiscreteSeqVar,Mixture[ProportionsVariable],DiscreteSeqVar] {
   self =>
   //type Seq[+A] = scala.collection.Seq[A]
-  def pr(ds:IndexedSeq[DiscreteValue], mixture:scala.collection.Seq[Proportions], gates:IndexedSeq[DiscreteValue]): Double = ds.zip(gates).map(tuple => mixture(tuple._2.intValue).apply(tuple._1.intValue)).product // Make product more efficient
+  def pr(ds:DiscreteSeqVar#Value, mixture:scala.collection.Seq[Proportions], gates:DiscreteSeqVar#Value): Double = ds.zip(gates).map(tuple => mixture(tuple._2.intValue).apply(tuple._1.intValue)).product // Make product more efficient
   //def pr(ds:Seq[DiscreteValue], mixture:Seq[DoubleSeq], gates:Seq[DiscreteValue]): Double = ds.zip(gates).map(tuple => mixture(tuple._2.intValue).apply(tuple._1.intValue)).product
-  def logpr(ds:IndexedSeq[DiscreteValue], mixture:scala.collection.Seq[Proportions], gates:IndexedSeq[DiscreteValue]): Double = ds.zip(gates).map(tuple => math.log(mixture(tuple._2.intValue).apply(tuple._1.intValue))).sum  
+  def logpr(ds:DiscreteSeqVar#Value, mixture:scala.collection.Seq[Proportions], gates:DiscreteSeqVar#Value): Double = ds.zip(gates).map(tuple => math.log(mixture(tuple._2.intValue).apply(tuple._1.intValue))).sum  
   //def logpr(ds:Seq[DiscreteValue], mixture:Seq[DoubleSeq], gates:Seq[DiscreteValue]): Double = ds.zip(gates).map(tuple => math.log(mixture(tuple._2.intValue).apply(tuple._1.intValue))).sum  
-  def sampledValue(d:DiscreteDomain, mixture:scala.collection.Seq[Proportions], gates:IndexedSeq[DiscreteValue])(implicit random: scala.util.Random): IndexedSeq[DiscreteValue] =
-    for (i <- 0 until gates.length) yield d.apply(mixture(gates(i).intValue).sampleIndex) 
-  case class Factor(override val _1:DiscreteSeqVariable, override val _2:Mixture[ProportionsVariable], override val _3:DiscreteSeqVariable) extends super.Factor(_1, _2, _3) with MixtureFactor {
+  def sampledValue(d:DiscreteDomain, mixture:scala.collection.Seq[Proportions], gates:DiscreteSeqVar#Value)(implicit random: scala.util.Random): DiscreteSeqVar#Value =
+    (for (i <- 0 until gates.length) yield d.apply(mixture(gates(i).intValue).sampleIndex)).asInstanceOf[DiscreteSeqVar#Value]
+  case class Factor(override val _1:DiscreteSeqVar, override val _2:Mixture[ProportionsVariable], override val _3:DiscreteSeqVar) extends super.Factor(_1, _2, _3) with MixtureFactor with SeqGeneratingFactor with SeqAsParentFactor {
     def gate = throw new Error("Not yet implemented. Need to make PlatedGate be a Gate?") // f._3
-    def pr(child:IndexedSeq[DiscreteValue], mixture:scala.collection.Seq[Proportions], zs:IndexedSeq[DiscreteValue]): Double = self.pr(child, mixture, zs)
-    override def logpr(child:IndexedSeq[DiscreteValue], mixture:scala.collection.Seq[Proportions], zs:IndexedSeq[DiscreteValue]): Double = self.logpr(child, mixture, zs)
-    def sampledValue(mixture:scala.collection.Seq[Proportions], zs:IndexedSeq[DiscreteValue])(implicit random: scala.util.Random): IndexedSeq[DiscreteValue] = self.sampledValue(_1.domain.elementDomain, mixture, zs)
-    def prChoosing(child:IndexedSeq[DiscreteValue], mixture:scala.collection.Seq[Proportions], mixtureIndex:Int): Double = throw new Error("Not yet implemented")
-    def sampledValueChoosing(mixture:scala.collection.Seq[Proportions], mixtureIndex:Int)(implicit random: scala.util.Random): ChildType#Value = throw new Error("Not yet implemented")
-    //def prValue(s:Statistics, value:Int, index:Int): Double = throw new Error("Not yet implemented")
-  }
-  def newFactor(a:DiscreteSeqVariable, b:Mixture[ProportionsVariable], c:DiscreteSeqVariable) = Factor(a, b, c)
-}
+    def pr(child:DiscreteSeqVar#Value, mixture:scala.collection.Seq[Proportions], zs:DiscreteSeqVar#Value): Double = self.pr(child, mixture, zs)
+    override def logpr(child:DiscreteSeqVar#Value, mixture:scala.collection.Seq[Proportions], zs:DiscreteSeqVar#Value): Double = self.logpr(child, mixture, zs)
+    def sampledValue(mixture:scala.collection.Seq[Proportions], zs:DiscreteSeqVar#Value)(implicit random: scala.util.Random): DiscreteSeqVar#Value = self.sampledValue(_1.domain.elementDomain, mixture, zs).asInstanceOf[DiscreteSeqVar#Value]
 
-object PlatedCategoricalMixture extends DirectedFamily3[CategoricalSeqVariable[String],Mixture[ProportionsVariable],DiscreteSeqVariable] {
-  self =>
-  //type Seq[+A] = scala.collection.Seq[A]
-  def pr(ds:IndexedSeq[CategoricalValue[String]], mixture:scala.collection.Seq[Proportions], gates:IndexedSeq[DiscreteValue]): Double = ds.zip(gates).map(tuple => mixture(tuple._2.intValue).apply(tuple._1.intValue)).product // Make product more efficient
-  //def pr(ds:Seq[CategoricalValue], mixture:Seq[DoubleSeq], gates:Seq[CategoricalValue]): Double = ds.zip(gates).map(tuple => mixture(tuple._2.intValue).apply(tuple._1.intValue)).product
-  def logpr(ds:IndexedSeq[CategoricalValue[String]], mixture:scala.collection.Seq[Proportions], gates:IndexedSeq[DiscreteValue]): Double = ds.zip(gates).map(tuple => math.log(mixture(tuple._2.intValue).apply(tuple._1.intValue))).sum  
-  //def logpr(ds:Seq[CategoricalValue], mixture:Seq[DoubleSeq], gates:Seq[CategoricalValue]): Double = ds.zip(gates).map(tuple => math.log(mixture(tuple._2.intValue).apply(tuple._1.intValue))).sum  
-  def sampledValue(d:CategoricalDomain[String], mixture:scala.collection.Seq[Proportions], gates:IndexedSeq[DiscreteValue])(implicit random: scala.util.Random): IndexedSeq[CategoricalValue[String]] =
-    for (i <- 0 until gates.length) yield d.apply(mixture(gates(i).intValue).sampleIndex) 
-  case class Factor(override val _1:CategoricalSeqVariable[String], override val _2:Mixture[ProportionsVariable], override val _3:DiscreteSeqVariable) extends super.Factor(_1, _2, _3) with MixtureFactor {
-    def gate = throw new Error("Not yet implemented. Need to make PlatedGate be a Gate?") // f._3
-    def pr(child:IndexedSeq[CategoricalValue[String]], mixture:scala.collection.Seq[Proportions], zs:IndexedSeq[DiscreteValue]): Double = self.pr(child, mixture, zs)
-    override def logpr(child:IndexedSeq[CategoricalValue[String]], mixture:scala.collection.Seq[Proportions], zs:IndexedSeq[DiscreteValue]): Double = self.logpr(child, mixture, zs)
-    def sampledValue(mixture:scala.collection.Seq[Proportions], zs:IndexedSeq[DiscreteValue])(implicit random: scala.util.Random): IndexedSeq[CategoricalValue[String]] = self.sampledValue(_1.head.domain, mixture, zs)
-    def prChoosing(child:IndexedSeq[CategoricalValue[String]], mixture:scala.collection.Seq[Proportions], mixtureIndex:Int): Double = throw new Error("Not yet implemented")
+    def prChoosing(child:DiscreteSeqVar#Value, mixture:scala.collection.Seq[Proportions], mixtureIndex:Int): Double = throw new Error("Not yet implemented")
     def sampledValueChoosing(mixture:scala.collection.Seq[Proportions], mixtureIndex:Int)(implicit random: scala.util.Random): ChildType#Value = throw new Error("Not yet implemented")
     //def prValue(s:Statistics, value:Int, index:Int): Double = throw new Error("Not yet implemented")
+    override def updateCollapsedParents(weight: Double) = {
+      _3.intValues.zip(_1.intValues).foreach {
+        case (parent, child) => _2(parent).incrementMasses(child, weight)(null)
+      }
+      true
+    }
+    override def updateCollapsedParentsForIdx(weight: Double, idx: Int): Boolean = {
+      _2(_3(idx).intValue).incrementMasses(_1(idx).intValue, weight)(null); true
+    }
+    override def updateCollapsedParentsForParentIdx(weight: Double, idx: Int): Boolean = updateCollapsedParentsForIdx(weight, idx)//same as above
+    def proportionalForChildIndex(idx: Int) = _2(_3.intValue(idx)).value.apply(_1.intValue(idx))
+    //the same as prForIndex here
+    def proportionalForParentIndex(idx: Int) = proportionalForChildIndex(idx)
   }
-  def newFactor(a:CategoricalSeqVariable[String], b:Mixture[ProportionsVariable], c:DiscreteSeqVariable) = Factor(a, b, c)
+  def newFactor(a:DiscreteSeqVar, b:Mixture[ProportionsVariable], c:DiscreteSeqVar) = Factor(a, b, c)
 }
