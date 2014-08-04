@@ -13,8 +13,8 @@ trait NeuralNetworkWeightsFamily {
   //increments input of output layers (by calling l.incrementInput(inc:Tensor1) for each output layer l)
   protected def _forwardPropagate(f: FamilyType#FactorType): Unit
   protected def _backPropagate(f: FamilyType#FactorType): Unit
-  //returns error on weights and propagates error to input layers from given error on output layer
-  protected def _backPropagateError(f: FamilyType#FactorType): Tensor
+  //returns objective on weights and propagates objective to input layers from given objective on output layer
+  protected def _backPropagateGradient(f: FamilyType#FactorType): Tensor
 
   trait Factor extends cc.factorie.model.Factor {
     def weights = family.weights.value
@@ -22,7 +22,7 @@ trait NeuralNetworkWeightsFamily {
     val outputLayers = NeuralNetworkWeightsFamily.this._outputLayers(this.asInstanceOf[FamilyType#FactorType])
     val inputLayers = NeuralNetworkWeightsFamily.this._inputLayers(this.asInstanceOf[FamilyType#FactorType])
     def forwardPropagate() = NeuralNetworkWeightsFamily.this._forwardPropagate(this.asInstanceOf[FamilyType#FactorType])
-    def backPropagateError = NeuralNetworkWeightsFamily.this._backPropagateError(this.asInstanceOf[FamilyType#FactorType])
+    def backPropagateGradient = NeuralNetworkWeightsFamily.this._backPropagateGradient(this.asInstanceOf[FamilyType#FactorType])
     def backPropagate() = NeuralNetworkWeightsFamily.this._backPropagate(this.asInstanceOf[FamilyType#FactorType])
   }
 }
@@ -61,13 +61,13 @@ trait Bias[N1<:NeuralNetworkLayer] extends NeuralNetworkWeightsFamily1[N1] {
   override def weights: Weights1
   override protected def _outputLayers(f: FamilyType#FactorType): Seq[NeuralNetworkLayer] = Seq(f._1)
   override protected def _inputLayers(f: FamilyType#FactorType): Seq[NeuralNetworkLayer] = Seq[NeuralNetworkLayer]()
-  override protected def _backPropagateError(f: FamilyType#FactorType): Tensor = weights.value match {
+  override protected def _backPropagateGradient(f: FamilyType#FactorType): Tensor = weights.value match {
     case w: Tensor1 =>
-      val errorGradient = f._1.error().copy
+      val weightGradient = f._1.objectiveGradient().copy
       val derivative: Tensor1 = f._1.activationFunction.applyDerivative(f._1.input)
-      errorGradient *= derivative
-      errorGradient
-    case _ => throw new IllegalArgumentException(s"Weights value of ${getClass.getSimpleName} must be of type Tensor2!") //throw error because this should not be possible
+      weightGradient *= derivative
+      weightGradient
+    case _ => throw new IllegalArgumentException(s"Weights value of ${getClass.getSimpleName} must be of type Tensor2!") //throw objective because this should not be possible
   }
   override protected def _forwardPropagate(f: FamilyType#FactorType): Unit = {
     f._1.incrementInput(weights.value)
@@ -84,13 +84,13 @@ trait BasicLayerToLayerWeightsFamily[N1 <: NeuralNetworkLayer, N2 <:NeuralNetwor
   override protected def _forwardPropagate(f: FamilyType#FactorType): Unit = weights.value match {
     case weights: Tensor2 => f._2.incrementInput(f._1.value * weights)
   }
-  override protected def _backPropagateError(f: FamilyType#FactorType): Tensor2 = weights.value match {
+  override protected def _backPropagateGradient(f: FamilyType#FactorType): Tensor2 = weights.value match {
     case w: Tensor2 =>
-      val outError = f._2.error().copy
-      outError *= f._2.activationFunction.applyDerivative(f._2.input())
-      f._1.incrementError(w * outError)
-      (f._1.value outer outError).asInstanceOf[Tensor2]
-    case _ => throw new IllegalArgumentException(s"Weights value of ${getClass.getSimpleName} must be of type Tensor2!") //throw error because this should not be possible
+      val outGradient = f._2.objectiveGradient().copy
+      outGradient *= f._2.activationFunction.applyDerivative(f._2.input())
+      f._1.incrementObjectiveGradient(w * outGradient)
+      (f._1.value outer outGradient).asInstanceOf[Tensor2]
+    case _ => throw new IllegalArgumentException(s"Weights value of ${getClass.getSimpleName} must be of type Tensor2!") //throw objective because this should not be possible
   }
 
   override protected def _backPropagate(f: FamilyType#FactorType): Unit = {}
@@ -123,24 +123,24 @@ trait NeuralTensorWeightsFamily[N1<:NeuralNetworkLayer,N2<:NeuralNetworkLayer,N3
         }
     f._3.incrementInput(input)
   }
-  override protected def _backPropagateError(f: FamilyType#FactorType): Tensor = weights.value match {
+  override protected def _backPropagateGradient(f: FamilyType#FactorType): Tensor = weights.value match {
     //TODO: Make efficient
     case w: Tensor3 =>
-      val outError = f._3.error()
+      val outGradient = f._3.objectiveGradient()
       val derivative = f._3.activationFunction.applyDerivative(f._3.input())
-      val weightError = w.blankCopy
-      for (k <- 0 until weightError.dim3) {
-        val outputError = derivative(k) * outError(k)
-        for (i <- 0 until weightError.dim1)
-          for (j <- 0 until weightError.dim2) {
+      val weightGradient = w.blankCopy
+      for (k <- 0 until weightGradient.dim3) {
+        val outputGradient = derivative(k) * outGradient(k)
+        for (i <- 0 until weightGradient.dim1)
+          for (j <- 0 until weightGradient.dim2) {
             val v1 = if (i < f._1.value.dim1) f._1.value(i) else f._2.value(i - f._1.value.dim1)
             val v2 = if (j < f._1.value.dim1) f._1.value(j) else f._2.value(j - f._1.value.dim1)
-            weightError.update(i, j, k, v1 * v2 * outputError)
-            if (i < f._1.value.dim1) f._1.error().+=(i, v2 * w(i, j, k) * outputError) else f._2.error().+=(i - f._1.value.dim1, v2 * w(i, j, k) * outputError)
-            if (j < f._1.value.dim1) f._1.error().+=(j, v1 * w(i, j, k) * outputError) else f._2.error().+=(j - f._1.value.dim1, v1 * w(i, j, k) * outputError)
+            weightGradient.update(i, j, k, v1 * v2 * outputGradient)
+            if (i < f._1.value.dim1) f._1.objectiveGradient().+=(i, v2 * w(i, j, k) * outputGradient) else f._2.objectiveGradient().+=(i - f._1.value.dim1, v2 * w(i, j, k) * outputGradient)
+            if (j < f._1.value.dim1) f._1.objectiveGradient().+=(j, v1 * w(i, j, k) * outputGradient) else f._2.objectiveGradient().+=(j - f._1.value.dim1, v1 * w(i, j, k) * outputGradient)
           }
       }
-      weightError
+      weightGradient
     case _ => throw new IllegalArgumentException(s"Weights value of ${getClass.getSimpleName} must be of type Tensor3!")
   }
 

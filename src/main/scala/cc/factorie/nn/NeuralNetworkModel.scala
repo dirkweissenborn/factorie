@@ -30,7 +30,7 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
   def totalObjective(inputLayers:Iterable[InputLayer],outputLayers:Iterable[OutputLayer]) = {
     forwardPropagateInput(inputLayers)
     outputLayers.map(o => {
-      o.error()
+      o.objectiveGradient()
       o.lastObjective
     }).sum
   }
@@ -67,17 +67,17 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
   }
 
   //returns gradient on the error function for all weights of this model
-  def backPropagateOutputError(inputLayers:Iterable[InputLayer]):WeightsMap= {
+  def backPropagateOutputGradient(inputLayers:Iterable[InputLayer]):WeightsMap= {
     val orderedFactors = calculateComputationSeq(inputLayers)
-    _backPropagateOutputError(orderedFactors)
+    _backPropagateOutputGradient(orderedFactors)
   }
 
-  protected def _backPropagateOutputError(orderedFactors: Seq[Seq[Factor]]): WeightsMap = {
+  protected def _backPropagateOutputGradient(orderedFactors: Seq[Seq[Factor]]): WeightsMap = {
     val map = new WeightsMap(key => key.value.blankCopy)
     orderedFactors.foldLeft(mutable.Set[NeuralNetworkLayer]()){ case (zeroed,fs) =>
       fs.foreach { case f =>
         f.inputLayers.withFilter(l => !zeroed.contains(l)).foreach(l => {
-          l.zeroError()
+          l.zeroObjectiveGradient()
           zeroed += l
         })
       }
@@ -85,16 +85,16 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
     }
 
     val errors = orderedFactors.reverseIterator.flatMap(fs => {
-      fs.map(f => f.family.weights -> f.backPropagateError)
+      fs.map(f => f.family.weights -> f.backPropagateGradient)
     })
     errors.foreach{ case (weights,gradient) => map(weights) += gradient }
     map
   }
 
-  def forwardAndBackPropagateOutputError(inputLayers:Iterable[InputLayer]):WeightsMap = {
+  def forwardAndBackPropagateOutputGradient(inputLayers:Iterable[InputLayer]):WeightsMap = {
     val orderedFactors = calculateComputationSeq(inputLayers)
     _forwardPropagateInput(orderedFactors,inputLayers)
-    _backPropagateOutputError(orderedFactors)
+    _backPropagateOutputGradient(orderedFactors)
   }
 
   //computes the DAG starting from the input layers and returns a seq of independent factors
@@ -152,7 +152,7 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
     val computationSeq = calculateComputationSeq(inputLayers) //cache that, so it doesnt have to be computed all the time
     override def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator): Unit = {
       _forwardPropagateInput(computationSeq,inputLayers)
-      val gradients = _backPropagateOutputError(computationSeq)
+      val gradients = _backPropagateOutputGradient(computationSeq)
       if(gradient != null)
         gradients.keys.foreach(k => gradient.accumulate(k,gradients(k)))
       if(withGradientCheck) {
@@ -183,7 +183,7 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
 }
 
 //Example feed-forward model
-class BasicFeedForwardNeuralNetwork(structure:Array[(Int,ActivationFunction)],errorFunction:MultivariateOptimizableObjective[Tensor1] = new SquaredMultivariate) extends FeedForwardNeuralNetworkModel {
+class BasicFeedForwardNeuralNetwork(structure:Array[(Int,ActivationFunction)],objectiveFunction:MultivariateOptimizableObjective[Tensor1] = new SquaredMultivariate) extends FeedForwardNeuralNetworkModel {
   trait InputLayer extends InnerLayer with InputNeuralNetworkLayer
   type Input = Tensor1
   type Output = Tensor1
@@ -233,7 +233,7 @@ class BasicFeedForwardNeuralNetwork(structure:Array[(Int,ActivationFunction)],er
       nextFactor._2.prevFactor = nextFactor
   }
 
-  class OutputLayer extends BasicOutputNeuralNetworkLayer(NNUtils.newDense(structure.last._1),structure(structure.length-1)._2,errorFunction) with Layer {
+  class OutputLayer extends BasicOutputNeuralNetworkLayer(NNUtils.newDense(structure.last._1),structure(structure.length-1)._2,objectiveFunction) with Layer {
     val index = structure.length-1
   }
 
