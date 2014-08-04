@@ -225,6 +225,12 @@ trait AdaptiveLearningRate extends GradientStep {
             }
             i += 1
           }
+        //the general case
+        case (g: Tensor,  hSq: Tensor) =>
+          val update = g.copy
+          update *= g
+          hSq += update
+          g.foreachActiveElement((i,v) => g.*=(i, eta / (math.sqrt(hSq(i)) + delta) ))
       }
   }
 }

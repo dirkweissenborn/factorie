@@ -13,6 +13,7 @@
 package cc.factorie.model
 
 import cc.factorie.la._
+import cc.factorie.nn.{NNUtils, NeuralNetworkModel}
 import scala.collection.mutable
 import cc.factorie.variable.TensorVar
 import cc.factorie._
@@ -43,7 +44,7 @@ class WeightsSet extends TensorSet {
   def apply(key: Weights): Tensor = key.value
 
   def copy: WeightsMap = { val copyTensor = new WeightsMap(key => key.newBlankTensor); copyTensor += self; copyTensor }
-  def blankDenseMap: WeightsMap = new WeightsMap(key => Tensor.newDense(key.value))
+  def blankDenseMap: WeightsMap = new WeightsMap(key => NNUtils.newDense(key.value))
   def blankSparseMap: WeightsMap = new WeightsMap(key => Tensor.newSparse(key.value))
   
   // Weights are created here to ensure that they are immediately associate with one and only one WeightsSet.
