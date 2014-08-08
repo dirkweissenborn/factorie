@@ -79,7 +79,7 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
     override lazy val weights: Weights3 = Weights(NNUtils.fillDense(dim*2,dim*2,dim)((i,j,k) => (rand.nextDouble()-0.5)/(2*dim)))
   }
   val bias = new Bias[Layer] {
-    override lazy val weights: Weights1 = Weights(NNUtils.fillDense(dim)((_) => 2*(rand.nextDouble()-0.5)/math.sqrt(dim)))
+    override lazy val weights: Weights1 = Weights(NNUtils.newDense(dim))
   }
   val outBias = new Bias[OutputLayer] {
     override lazy val weights: Weights1 = Weights(NNUtils.newDense(numLabels))
@@ -124,7 +124,7 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
 
 object SentimentRNN extends FastLogging {
   def train(train:File,test:File,dev:File) {
-    NNUtils.setTensorImplementation(NNUtils.JBLAS)
+    NNUtils.setTensorImplementation(NNUtils.EJML)
     val batchSize = 27
 
     val trainTrees = LoadPTB.sentimentPTBFromFile(train).toList
@@ -198,7 +198,7 @@ object SentimentRNN extends FastLogging {
       val trainer = new ParallelBatchTrainer(
         model.parameters,
         maxIterations = -1,
-        optimizer = new AdaGrad(0.01,0.001) with L2Regularization { variance = 1000.0 })
+        optimizer = new AdaGrad(rate = 0.01,delta = 0.001) with L2Regularization { variance = 1000.0 }) //Adagrad with L2-regularization
 
       trainExamples.grouped(batchSize).foreach(e => trainer.processExamples(e))
       printEvaluation(trainExamples.map(_.outputLayers),"Train")

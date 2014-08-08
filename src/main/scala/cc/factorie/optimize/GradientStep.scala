@@ -231,18 +231,17 @@ trait AdaptiveLearningRate extends GradientStep {
           val (g_j,h_j) = (g.jblas,hSq.jblas)
           h_j.addi(MatrixFunctions.pow(g_j,2.0))
           g_j.muli(eta).divi(MatrixFunctions.sqrt(h_j).addi(delta))
-        case (g: EJMLTensor,  hSq: EJMLTensor) =>
-          val (g_j,h_j) = (g.matrix.getMatrix.getData,hSq.matrix.getMatrix.getData)
-          (0 until g_j.length).foreach(i => {
-            h_j(i) += g_j(i)*g_j(i)
-            g_j(i) *= eta / (math.sqrt(h_j(i)) + delta)
-          })
         //the general case
         case (g: Tensor,  hSq: Tensor) =>
           val update = g.copy
           update *= g
           hSq += update
-          g.foreachActiveElement((i,v) => g.*=(i, eta / (math.sqrt(hSq(i)) + delta) ))
+          val hSq_scaled = hSq.blankCopy
+          hSq_scaled.foreachElement((i,_) => hSq_scaled.update(i,math.sqrt(hSq(i))))
+          hSq_scaled += delta
+          hSq_scaled *= 1.0/eta
+          g /= hSq_scaled
+          //.foreachActiveElement((i,v) => g.*=(i, eta / (math.sqrt(hSq(i)) + delta) ))
       }
   }
 }
