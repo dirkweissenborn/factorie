@@ -2,6 +2,7 @@ package cc.factorie.nn
 
 import cc.factorie.la.{UniformTensor1, Tensor1}
 
+import scala.collection.mutable
 import scala.util.Random
 
 /**
@@ -114,9 +115,7 @@ object ActivationFunction {
   object SoftMax extends BaseActivationFunction {
     def apply(input: Tensor1) = input.expNormalize()
     def applyDerivative(input: Tensor1): Tensor1 = {
-      val softMax = input.expNormalized.asInstanceOf[Tensor1]
-      softMax.foreachActiveElement { case (i, value) => softMax.update(i, value * (1.0 - value))}
-      softMax
+      throw new NotImplementedError("There is no direct calculation of of the Softmax derivative for each unit in separate")
     }
   }
 

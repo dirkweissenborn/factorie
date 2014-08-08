@@ -7,27 +7,54 @@ import cc.factorie.variable.{TargetVar, LabeledMutableVar, MutableTensorVar}
 
 trait NeuralNetworkLayer extends MutableTensorVar {
   final override type Value = Tensor1
+  def activationFunction:ActivationFunction
+
   def zeroInput():Unit
+  def input():Tensor1
+  def incrementInput(in:Tensor1):Unit
+  def updateActivation():Unit
+
   def zeroObjectiveGradient():Unit
   def objectiveGradient():Tensor1
-  def input():Tensor1
-  def activationFunction:ActivationFunction
-  def incrementInput(in:Tensor1):Unit
   def incrementObjectiveGradient(in:Tensor1):Unit
-  def updateActivation():Unit
+  def updateObjectiveGradient():Unit
+
+  final protected def updateObjectiveGradient(_objectiveGradient:Tensor1):Unit = {
+    //This is not nice, however I don't know how to integrate softmax with ActivationFunction nicely, without loosing efficiency
+    if(activationFunction == ActivationFunction.SoftMax) {
+      val temp = _objectiveGradient.copy
+      _objectiveGradient.zero()
+      temp.foreachActiveElement((i,obj_i) => {
+        value.foreachActiveElement((j,softmax_j) => {
+          val partialDerivative = {if(i==j) softmax_j-softmax_j*softmax_j else -softmax_j*value(i)}
+          _objectiveGradient += (j,obj_i*partialDerivative)
+        })
+      })
+    } else _objectiveGradient *= activationFunction.applyDerivative(input())
+  }
 }
 
-trait LabeledNeuralNetworkLayer extends NeuralNetworkLayer with LabeledMutableVar {
-  override type TargetType = TargetNeuralNetworkLayer
+trait OutputNeuralNetworkLayer extends NeuralNetworkLayer {
   def objectiveFunction:MultivariateOptimizableObjective[Tensor1]
+  def lastObjective: Double
+}
+
+trait LabeledNeuralNetworkLayer extends NeuralNetworkLayer with LabeledMutableVar with OutputNeuralNetworkLayer {
+  override type TargetType = TargetNeuralNetworkLayer
+
   //should get updated when error is called on such a Layer, used for calculating objective through the error function
   override def objectiveGradient() = {
     val (v,gradient) = objectiveFunction.valueAndGradient(value.copy,target.value)
     _lastObjective = v
+    updateObjectiveGradient(gradient)
     gradient
   }
+
+  //only needed for hidden units after accumulating their error from parent factors
+  final override def updateObjectiveGradient(): Unit = {}
   def lastObjective: Double = _lastObjective
   protected var _lastObjective = 0.0
+  final override def zeroObjectiveGradient(): Unit = {}
 }
 
 trait TargetNeuralNetworkLayer extends MutableTensorVar with TargetVar {
@@ -43,6 +70,7 @@ class BasicNeuralNetworkLayer(t:Tensor1, override val activationFunction:Activat
   def zeroInput() = _input.zero()
   def zeroObjectiveGradient() = _objectiveGradient.zero()
   def objectiveGradient() = _objectiveGradient
+  def updateObjectiveGradient():Unit = updateObjectiveGradient(_objectiveGradient)
   def input() = _input
   def incrementInput(in:Tensor1) =
     _input += in

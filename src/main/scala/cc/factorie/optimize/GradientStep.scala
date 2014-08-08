@@ -15,6 +15,8 @@ package cc.factorie.optimize
 
 import cc.factorie.la._
 import cc.factorie.model.{WeightsMap, WeightsSet}
+import org.ejml.ops.CommonOps
+import org.jblas.MatrixFunctions
 
 /**
  * Base trait for optimizers whose operational form can be described as
@@ -59,7 +61,7 @@ trait GradientStep extends GradientOptimizer {
    * @param gradient The gradient
    * @param value The value
    */
-  final def step(weights: WeightsSet, gradient: WeightsMap, value: Double): Unit = {
+  def step(weights: WeightsSet, gradient: WeightsMap, value: Double): Unit = {
     it += 1
     processGradient(weights, gradient)
     val rate = lRate(weights, gradient, value)
@@ -225,6 +227,16 @@ trait AdaptiveLearningRate extends GradientStep {
             }
             i += 1
           }
+        case (g: JBlasTensor,  hSq: JBlasTensor) =>
+          val (g_j,h_j) = (g.jblas,hSq.jblas)
+          h_j.addi(MatrixFunctions.pow(g_j,2.0))
+          g_j.muli(eta).divi(MatrixFunctions.sqrt(h_j).addi(delta))
+        case (g: EJMLTensor,  hSq: EJMLTensor) =>
+          val (g_j,h_j) = (g.matrix.getMatrix.getData,hSq.matrix.getMatrix.getData)
+          (0 until g_j.length).foreach(i => {
+            h_j(i) += g_j(i)*g_j(i)
+            g_j(i) *= eta / (math.sqrt(h_j(i)) + delta)
+          })
         //the general case
         case (g: Tensor,  hSq: Tensor) =>
           val update = g.copy

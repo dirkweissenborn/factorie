@@ -1,6 +1,7 @@
 package cc.factorie.nn
 
 import cc.factorie.la._
+import org.jblas.DoubleMatrix
 
 
 object NNUtils  extends TensorImplementation {
@@ -19,22 +20,38 @@ object NNUtils  extends TensorImplementation {
   object JBLAS extends TensorImplementation {
     override def newDense(dim1: Int): Tensor1 = new JBlasTensor1(dim1)
     override def newDense(dim1: Int, dim2: Int): Tensor2 = new JBlasTensor2(dim1,dim2)
-    override def newDense(dim1: Int, dim2: Int, dim3: Int): Tensor3 = throw new NotImplementedError() //Not Implemented yet, store an array of JBlasTensor2
+    override def newDense(dim1: Int, dim2: Int, dim3: Int): Tensor3 = new FixedLayers2DenseTensor3(Array.fill(dim3)(new JBlasTensor2(dim1,dim2))) //Not Implemented yet, store an array of JBlasTensor2
     override def newDense(dim1: Int, dim2: Int, dim3: Int, dim4: Int): Tensor4 = throw new NotImplementedError() //Not Implemented yet, store Array of JBLASTensor3
   }
   object EJML extends TensorImplementation {
     override def newDense(dim1: Int): Tensor1 = new EJMLTensor1(dim1)
     override def newDense(dim1: Int, dim2: Int): Tensor2 = new EJMLTensor2(dim1,dim2)
-    override def newDense(dim1: Int, dim2: Int, dim3: Int): Tensor3 = throw new NotImplementedError() //Not Implemented yet, store an array of JBlasTensor2
+    override def newDense(dim1: Int, dim2: Int, dim3: Int): Tensor3 = new FixedLayers2DenseTensor3(Array.fill(dim3)(new EJMLTensor2(dim1,dim2))) //Not Implemented yet, store an array of JBlasTensor2
     override def newDense(dim1: Int, dim2: Int, dim3: Int, dim4: Int): Tensor4 = throw new NotImplementedError() //Not Implemented yet, store Array of JBLASTensor3
   }
 
-/* simple performance tests:
-  big matrix multiplications + addition: winner JBLAS
-  small matrix multiplication + addition: winner EJML
-  big elementwise matrix multiplication: winner EJML
-  small elementwise matrix multiplication: winner EJML
-*/
+  def concatenateTensor1(t1:Tensor1,t2:Tensor1):Tensor1 = (t1,t2) match {
+    case (t1:JBlasTensor1,t2:JBlasTensor1) =>
+      new JBlasTensor1(DoubleMatrix.concatVertically(t1.jblas,t2.jblas))
+    case (t1:EJMLTensor1,t2:EJMLTensor1) =>
+      new EJMLTensor1(t1.matrix.combine(t1.dim1,0,t2.matrix))
+    case _ => new ConcatenatedTensor(Seq(t1,t2))
+  }
+
+  //Usually used with a prior concatenateTensor1
+  def splitTensor1(t:Tensor1, at:Int) = t match {
+    case t:JBlasTensor1 =>
+      (new JBlasTensor1(t.jblas.getRowRange(0,at,0)),new JBlasTensor1(t.jblas.getRowRange(at,t.dim1,0)))
+    case t:EJMLTensor1 =>
+      (new EJMLTensor1(t.matrix.extractMatrix(0,at,0,1)),new EJMLTensor1(t.matrix.extractMatrix(at,t.dim1,0,1)))
+    case t:ConcatenatedTensor =>
+      if(t.tensors.length == 2 && t.tensors.head.length == at)
+        (t.tensors(0).asInstanceOf[Tensor1], t.tensors(1).asInstanceOf[Tensor1])
+      else
+        throw new Error(s"Splitting ConcatenatedTensor with more than 2 tensors or where first tensors length does not is not the splitting point is not supported")
+    case _ => throw new Error(s"Splitting ${t.getClass.getSimpleName} not supported")
+  }
+  
   def main (args: Array[String]) {
     import scala.util.Random
 

@@ -54,9 +54,10 @@ class BatchTrainer(val weightsSet: WeightsSet, val optimizer: GradientOptimizer 
     valueAccumulator.value = 0.0
     val startTime = System.currentTimeMillis
     examples.foreach(example => example.accumulateValueAndGradient(valueAccumulator, gradientAccumulator))
-    val ellapsedTime = System.currentTimeMillis - startTime
-    logger.info(TrainerHelpers.getBatchTrainerStatus(gradientAccumulator.tensorSet.oneNorm, valueAccumulator.value, ellapsedTime))
+    val (norm, value) = (gradientAccumulator.tensorSet.oneNorm, valueAccumulator.value)
     optimizer.step(weightsSet, gradientAccumulator.tensorSet, valueAccumulator.value)
+    val ellapsedTime = System.currentTimeMillis - startTime
+    logger.info(TrainerHelpers.getBatchTrainerStatus(norm, value, ellapsedTime))
   }
   def isConverged = (maxIterations != -1 && iteration >= maxIterations) || optimizer.isConverged
 }
@@ -132,9 +133,10 @@ class ParallelBatchTrainer(val weightsSet: WeightsSet, val optimizer: GradientOp
     valueAccumulator.l.value = 0
     val startTime = System.currentTimeMillis
     util.Threading.parForeach(examples.toSeq, nThreads)(_.accumulateValueAndGradient(valueAccumulator, gradientAccumulator))
+    val (norm, value) = (gradientAccumulator.tensorSet.oneNorm, valueAccumulator.l.value)
+    optimizer.step(weightsSet, gradientAccumulator.l.tensorSet, valueAccumulator.l.value)
     val ellapsedTime = System.currentTimeMillis - startTime
-    logger.info(TrainerHelpers.getBatchTrainerStatus(gradientAccumulator.l.tensorSet.oneNorm, valueAccumulator.l.value, ellapsedTime))
-    optimizer.step(weightsSet, gradientAccumulator.tensorSet, valueAccumulator.l.value)
+    logger.info(TrainerHelpers.getBatchTrainerStatus(norm, value, ellapsedTime))
   }
   def isConverged = (maxIterations != -1 && iteration >= maxIterations) || optimizer.isConverged
 }

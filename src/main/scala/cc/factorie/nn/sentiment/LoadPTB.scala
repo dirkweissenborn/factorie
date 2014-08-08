@@ -16,12 +16,18 @@ object LoadPTB extends RegexParsers {
     Source.fromFile(f).getLines().map(treeString => {
       //HACK
       id = 0
-      parseAll(tree,treeString) match {
-        case Success(result,_) => new SentimentPTree(result.sortBy(_.id).toArray[SentimentPNode])
-        case _ => throw new IllegalArgumentException(s"${f.getAbsolutePath} is not a sentiment PTB file!")
-      }
+      sentimentPTPFromString(treeString)
     })
   }
+
+
+  def sentimentPTPFromString(treeString: String): SentimentPTree = {
+    parseAll(tree, treeString) match {
+      case Success(result, _) => new SentimentPTree(result.sortBy(_.id).toArray[SentimentPNode])
+      case _ => throw new IllegalArgumentException(s"$treeString is not in sentiment PTB format!")
+    }
+  }
+
   private var id = 0
 
   val score:Parser[Int] = "[0-4]".r ^^ { case s => s.toInt}

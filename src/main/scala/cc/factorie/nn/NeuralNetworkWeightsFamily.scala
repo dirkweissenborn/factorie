@@ -62,11 +62,7 @@ trait Bias[N1<:NeuralNetworkLayer] extends NeuralNetworkWeightsFamily1[N1] {
   override protected def _outputLayers(f: FamilyType#FactorType): Seq[NeuralNetworkLayer] = Seq(f._1)
   override protected def _inputLayers(f: FamilyType#FactorType): Seq[NeuralNetworkLayer] = Seq[NeuralNetworkLayer]()
   override protected def _backPropagateGradient(f: FamilyType#FactorType): Tensor = weights.value match {
-    case w: Tensor1 =>
-      val weightGradient = f._1.objectiveGradient().copy
-      val derivative: Tensor1 = f._1.activationFunction.applyDerivative(f._1.input)
-      weightGradient *= derivative
-      weightGradient
+    case w: Tensor1 => f._1.objectiveGradient()
     case _ => throw new IllegalArgumentException(s"Weights value of ${getClass.getSimpleName} must be of type Tensor2!") //throw objective because this should not be possible
   }
   override protected def _forwardPropagate(f: FamilyType#FactorType): Unit = {
@@ -86,9 +82,9 @@ trait BasicLayerToLayerWeightsFamily[N1 <: NeuralNetworkLayer, N2 <:NeuralNetwor
   }
   override protected def _backPropagateGradient(f: FamilyType#FactorType): Tensor2 = weights.value match {
     case w: Tensor2 =>
-      val outGradient = f._2.objectiveGradient().copy
-      outGradient *= f._2.activationFunction.applyDerivative(f._2.input())
-      f._1.incrementObjectiveGradient(w * outGradient)
+      val outGradient = f._2.objectiveGradient()
+      if(!f._1.isInstanceOf[InputNeuralNetworkLayer])
+        f._1.incrementObjectiveGradient(w * outGradient)
       (f._1.value outer outGradient).asInstanceOf[Tensor2]
     case _ => throw new IllegalArgumentException(s"Weights value of ${getClass.getSimpleName} must be of type Tensor2!") //throw objective because this should not be possible
   }
@@ -104,33 +100,49 @@ trait NeuralTensorWeightsFamily[N1<:NeuralNetworkLayer,N2<:NeuralNetworkLayer,N3
   override protected def _outputLayers(f: FamilyType#FactorType): Seq[NeuralNetworkLayer] = Seq(f._3)
   override protected def _inputLayers(f: FamilyType#FactorType): Seq[NeuralNetworkLayer] = Seq(f._1, f._2)
   override def statistics(v1: Tensor1, v2: Tensor1, v3: Tensor1): Tensor = {
-    val combinedV1V2 = NNUtils.newDense(v1.dim1 + v2.dim1)
-    combinedV1V2 += v1
-    val d = v1.dim1
-    v2.foreachActiveElement((i, v) => combinedV1V2 +=(d + i, v))
-    combinedV1V2 outer combinedV1V2 outer v3
+    val concatVector = NNUtils.concatenateTensor1(v1, v2)
+    concatVector outer concatVector outer v3
   }
-  //TODO: Make efficient
-  override protected def _forwardPropagate(f: FamilyType#FactorType): Unit = {
-    val input = NNUtils.newDense(f._3.value.length)
-    for (k <- 0 until input.dim1)
-      for (i <- 0 until f._1.value.dim1 + f._2.value.dim1)
-        for (j <- 0 until f._1.value.dim1 + f._2.value.dim1) {
-          val v1 = if (i < f._1.value.dim1) f._1.value(i) else f._2.value(i - f._1.value.dim1)
-          val v2 = if (j < f._1.value.dim1) f._1.value(j) else f._2.value(j - f._1.value.dim1)
-          val weight: Double = weights.value(i, j, k)
-          input +=(k, weight * v1 * v2)
-        }
-    f._3.incrementInput(input)
+  override protected def _forwardPropagate(f: FamilyType#FactorType): Unit = weights.value match {
+    case w:FixedLayers2DenseTensor3 =>
+      val concatVector = NNUtils.concatenateTensor1(f._1.value, f._2.value)
+      val input = NNUtils.fillDense(f._3.value.length)(k => (w.matrices(k) * concatVector) dot concatVector)
+      f._3.incrementInput(input)
+    case w: Tensor3 =>
+      val input = NNUtils.newDense(f._3.value.length)
+      for (k <- 0 until input.dim1)
+        for (i <- 0 until f._1.value.dim1 + f._2.value.dim1)
+          for (j <- 0 until f._1.value.dim1 + f._2.value.dim1) {
+            val v1 = if (i < f._1.value.dim1) f._1.value(i) else f._2.value(i - f._1.value.dim1)
+            val v2 = if (j < f._1.value.dim1) f._1.value(j) else f._2.value(j - f._1.value.dim1)
+            val weight: Double = weights.value(i, j, k)
+            input +=(k, weight * v1 * v2)
+          }
+      f._3.incrementInput(input)
   }
   override protected def _backPropagateGradient(f: FamilyType#FactorType): Tensor = weights.value match {
-    //TODO: Make efficient
+    case w:FixedLayers2DenseTensor3 =>
+      val concatVector = NNUtils.concatenateTensor1(f._1.value, f._2.value)
+      val outerProd = concatVector outer concatVector
+      val outGradient = f._3.objectiveGradient()
+      val inputGradient = NNUtils.newDense(f._1.value.dim1 + f._2.value.dim1)
+      val weightGradient = new FixedLayers2DenseTensor3(
+        (0 until w.dim3).foldLeft(new Array[Tensor2](w.dim3))((a,k) => {
+          a(k) = (outerProd * outGradient(k)).asInstanceOf[Tensor2]
+          val in_k = w.matrices(k) * concatVector
+          in_k += (concatVector * w.matrices(k))
+          inputGradient += (in_k, outGradient(k))
+          a
+        }))
+      val (firstGradient,secondGradient) = NNUtils.splitTensor1(inputGradient,f._1.value.dim1)
+      f._1.incrementObjectiveGradient(firstGradient)
+      f._2.incrementObjectiveGradient(secondGradient)
+      weightGradient
     case w: Tensor3 =>
       val outGradient = f._3.objectiveGradient()
-      val derivative = f._3.activationFunction.applyDerivative(f._3.input())
       val weightGradient = w.blankCopy
       for (k <- 0 until weightGradient.dim3) {
-        val outputGradient = derivative(k) * outGradient(k)
+        val outputGradient = outGradient(k)
         for (i <- 0 until weightGradient.dim1)
           for (j <- 0 until weightGradient.dim2) {
             val v1 = if (i < f._1.value.dim1) f._1.value(i) else f._2.value(i - f._1.value.dim1)

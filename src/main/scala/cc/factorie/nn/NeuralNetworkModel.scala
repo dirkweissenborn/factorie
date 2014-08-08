@@ -1,6 +1,6 @@
 package cc.factorie.nn
 
-import cc.factorie.la.{WeightsMapAccumulator, Tensor1}
+import cc.factorie.la.{SmartGradientAccumulator, WeightsMapAccumulator, Tensor1}
 import cc.factorie.model
 import cc.factorie.model._
 import cc.factorie.optimize.{Example, MultivariateOptimizableObjective}
@@ -23,12 +23,14 @@ trait NeuralNetworkModel extends Model with Parameters {
 // this mixin can handle any kind of network structure that is a DAG
 trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging {
   type InputLayer <: InputNeuralNetworkLayer
-  type OutputLayer <: LabeledNeuralNetworkLayer
+  type OutputLayer <: OutputNeuralNetworkLayer
   type Input
   type Output
 
-  def totalObjective(inputLayers:Iterable[InputLayer],outputLayers:Iterable[OutputLayer]) = {
-    forwardPropagateInput(inputLayers)
+  //represents ordered execution/update sequence of factors/layers, from input to output
+  type OrderedFactors = Seq[(Iterable[Factor],Iterable[NeuralNetworkLayer])]
+
+  def totalObjective(outputLayers:Iterable[OutputLayer]) = {
     outputLayers.map(o => {
       o.objectiveGradient()
       o.lastObjective
@@ -40,29 +42,11 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
     _forwardPropagateInput(orderedFactors,inputLayers)
   }
 
-  protected def _forwardPropagateInput(orderedFactors:Seq[Seq[Factor]], inputLayers:Iterable[InputLayer]) = {
-    val updated = mutable.Set[NeuralNetworkLayer]() ++ inputLayers
-    orderedFactors.foldLeft(mutable.Set[NeuralNetworkLayer]()){ case (zeroed,fs) =>
-      fs.foreach { case f =>
-        f.outputLayers.withFilter(l => !zeroed.contains(l)).foreach(l => {
-          l.zeroInput()
-          zeroed += l
-        })
-      }
-      zeroed
-    }
+  protected def _forwardPropagateInput(orderedFactors:OrderedFactors, inputLayers:Iterable[InputLayer]) = {
+    orderedFactors.foreach(_._2.foreach(_.zeroInput()))
     orderedFactors.foreach(fs => {
-      fs.foreach { f =>
-        f.inputLayers.withFilter(l => !updated.contains(l)).foreach(l => {
-          l.updateActivation()
-          updated += l
-        })
-        f.forwardPropagate()
-        fs.foreach(_.foreach(_.variables.foreach { case v =>
-          if (v.isInstanceOf[OutputLayer])
-            v.asInstanceOf[OutputLayer].updateActivation()
-        }))
-      }
+      fs._1.foreach { _.forwardPropagate() }
+      fs._2.foreach(_.updateActivation())
     })
   }
 
@@ -72,22 +56,20 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
     _backPropagateOutputGradient(orderedFactors)
   }
 
-  protected def _backPropagateOutputGradient(orderedFactors: Seq[Seq[Factor]]): WeightsMap = {
+  protected def _backPropagateOutputGradient(orderedFactors: OrderedFactors): WeightsMap = {
     val map = new WeightsMap(key => key.value.blankCopy)
-    orderedFactors.foldLeft(mutable.Set[NeuralNetworkLayer]()){ case (zeroed,fs) =>
-      fs.foreach { case f =>
-        f.inputLayers.withFilter(l => !zeroed.contains(l)).foreach(l => {
-          l.zeroObjectiveGradient()
-          zeroed += l
-        })
-      }
-      zeroed
-    }
-
-    val errors = orderedFactors.reverseIterator.flatMap(fs => {
-      fs.map(f => f.family.weights -> f.backPropagateGradient)
+    orderedFactors.foreach(_._2.foreach(_.zeroObjectiveGradient()))
+    val gradients = orderedFactors.reverseIterator.flatMap(fs => {
+      //multiply accumulated gradient with derivative of activation
+      fs._2.foreach(_.updateObjectiveGradient())
+      //backpropagate gradient
+      val e = fs._1.map(f => f.family.weights -> f.backPropagateGradient)
+      e
     })
-    errors.foreach{ case (weights,gradient) => map(weights) += gradient }
+    gradients.foreach{
+      case (weights,gradient) =>
+        map(weights) += gradient
+    }
     map
   }
 
@@ -97,12 +79,12 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
     _backPropagateOutputGradient(orderedFactors)
   }
 
-  //computes the DAG starting from the input layers and returns a seq of independent factors
+  //computes the DAG starting from the input layers and returns a seq of independent factors and layers which inputs comes only from factors up to this point
   //Override this if there is a more efficient way of computing this (e.g.: see BasicFeedForwardNeuralNetwork)
-  def calculateComputationSeq(inputLayers:Iterable[InputLayer]): Seq[Seq[Factor]] = {
+  def calculateComputationSeq(inputLayers:Iterable[InputLayer]): OrderedFactors = {
     var currentLayers = mutable.HashSet[NeuralNetworkLayer]() ++ inputLayers
     val updatedLayers = mutable.HashSet[NeuralNetworkLayer]() ++ inputLayers
-    val factorSeq = ArrayBuffer[ArrayBuffer[Factor]]()
+    val factorSeq = ArrayBuffer[(ArrayBuffer[Factor],Iterable[NeuralNetworkLayer])]()
 
     val updatedInputLayers = mutable.Map[Factor,(Int,Int)]()
     val updatedInputFactors = mutable.Map[NeuralNetworkLayer,(Int,Int)]()
@@ -134,7 +116,7 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
       //Add biases
       currentLayers.foreach(l => nextFactors ++= inputFactors(l).filter(_.numVariables == 1))
       if(nextFactors.nonEmpty)
-        factorSeq += nextFactors
+        factorSeq += ((nextFactors,nextLayers))
     }
     factorSeq
   }
@@ -148,37 +130,53 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
   //creates network input and corresponding output. It is possible that the network architecture has many input and output layers, depending on its architecture
   def createNetwork(input:Input,output:Output):(Iterable[InputLayer],Iterable[OutputLayer])
 
-  class BackPropagationExample(inputLayers:Iterable[InputLayer], outputLayers:Iterable[OutputLayer], var withGradientCheck:Boolean = false) extends Example {
+  class BackPropagationExample(val inputLayers:Iterable[InputLayer], val outputLayers:Iterable[OutputLayer], val scale:Double = 1.0) extends Example {
     val computationSeq = calculateComputationSeq(inputLayers) //cache that, so it doesnt have to be computed all the time
     override def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator): Unit = {
       _forwardPropagateInput(computationSeq,inputLayers)
       val gradients = _backPropagateOutputGradient(computationSeq)
       if(gradient != null)
-        gradients.keys.foreach(k => gradient.accumulate(k,gradients(k)))
-      if(withGradientCheck) {
-        withGradientCheck = false
-        Example.testGradient(parameters, this, verbose = true)
-        withGradientCheck = true
-      }
+        gradients.keys.foreach(k => gradient.accumulate(k,gradients(k),scale))
       if(value != null)
-        value.accumulate(outputLayers.foldLeft(0.0)(_ + _.lastObjective))
+        value.accumulate(outputLayers.foldLeft(0.0)(_ + _.lastObjective) * scale)
     }
-    /*val epsilon = 0.001
-    def checkGradient(gradient:WeightsMap, input:Iterable[InputLayer],output:Iterable[OutputLayer]) {
-      parameters.keys.foreach(w => {
+    //sample is number of samples per weights
+    def checkGradient(gradient:WeightsMap = null, sample:Int = -1) = {
+      var check = true
+      val g = {
+        if (gradient == null) {
+          _forwardPropagateInput(computationSeq,inputLayers)
+          _backPropagateOutputGradient(computationSeq)
+        } else gradient
+      }
+
+      val epsilon: Double = 1e-5
+      val diffThreshold: Double = 0.01
+      val diffPctThreshold: Double = 0.1
+
+      g.keys.foreach(w => {
         w.value.foreachActiveElement((i,v) => {
-          val g_i = gradient.apply(w)(i)
-          w.value.update(i,v+epsilon)
-          val e1 = totalObjective(input,output)
-          w.value.update(i,v-epsilon)
-          val e2 = totalObjective(input,output)
-          val diff = math.abs((e1-e2)/(2*epsilon)-g_i)
-          w.value.update(i,v)
-          if(diff > epsilon)
-            logger.warn(s"gradient check failed with difference: $diff > $epsilon")
+          if(sample < 0 || rng.nextInt(w.value.activeDomainSize) < sample) {
+            val calcDeriv = g.apply(w)(i)
+            w.value.update(i, v + epsilon)
+            _forwardPropagateInput(computationSeq, inputLayers)
+            val e1 = totalObjective(outputLayers)
+            w.value.update(i, v - epsilon)
+            _forwardPropagateInput(computationSeq, inputLayers)
+            val e2 = totalObjective(outputLayers)
+            val appDeriv: Double = (e1 - e2) / (2 * epsilon)
+            val diff = math.abs(appDeriv - calcDeriv)
+            val pct = diff / Math.min(Math.abs(appDeriv), Math.abs(calcDeriv))
+            w.value.update(i, v)
+            if (diff > diffThreshold && pct > diffPctThreshold) {
+              check = false
+              logger.warn(s"gradient check failed with difference: $diff > $diffThreshold")
+            }
+          }
         })
       })
-    }*/
+      check
+    }
   }
 }
 
@@ -261,18 +259,5 @@ class BasicFeedForwardNeuralNetwork(structure:Array[(Int,ActivationFunction)],ob
         List(v.nextFactor)
       else
         List[Factor]()
-  }
-
-  //The rest is only there to make some implementations more efficient in this special case of a stacked FeedForwardNetwork
-  override def calculateComputationSeq(inputLayers: Iterable[InputLayer]): Seq[Seq[Factor]] = {
-    var currentLayers = Seq[Layer]() ++ inputLayers
-    val factorSeq = ArrayBuffer[ArrayBuffer[Factor]]()
-    while(currentLayers.nonEmpty) {
-      val nextFactors = currentLayers.withFilter(_.nextFactor!=null).map(_.nextFactor)
-      currentLayers = nextFactors.map(_._2)
-      if(nextFactors.nonEmpty)
-        factorSeq += new ArrayBuffer[Factor]() ++ nextFactors.asInstanceOf[Seq[Factor]] ++ currentLayers.map(_.bias).asInstanceOf[Seq[Factor]]
-    }
-    factorSeq
   }
 }
