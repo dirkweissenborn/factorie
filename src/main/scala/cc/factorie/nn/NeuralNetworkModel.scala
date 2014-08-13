@@ -58,7 +58,7 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
 
   protected def _backPropagateOutputGradient(orderedFactors: OrderedFactors): WeightsMap = {
     val map = new WeightsMap(key => key.value.blankCopy)
-    orderedFactors.foreach(_._2.foreach(_.zeroObjectiveGradient()))
+    orderedFactors.foreach(_._2.withFilter(!_.isInstanceOf[OutputLayer]).foreach(_.zeroObjectiveGradient()))
     val gradients = orderedFactors.reverseIterator.flatMap(fs => {
       //multiply accumulated gradient with derivative of activation
       fs._2.foreach(_.updateObjectiveGradient())
@@ -71,6 +71,22 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
         map(weights) += gradient
     }
     map
+  }
+
+  protected def _backPropagateOutputGradient(orderedFactors: OrderedFactors,accumulator:WeightsMapAccumulator,scale:Double=1.0) = {
+    orderedFactors.foreach(_._2.withFilter(!_.isInstanceOf[OutputLayer]).foreach(_.zeroObjectiveGradient()))
+    val gradients = orderedFactors.reverseIterator.flatMap(fs => {
+      //multiply accumulated gradient with derivative of activation
+      fs._2.foreach(_.updateObjectiveGradient())
+      //backpropagate gradient
+      val e = fs._1.map(f => f.family.weights -> f.backPropagateGradient)
+      e
+    })
+    gradients.foreach{
+      case (weights,gradient) =>
+        if(scale ==1.0) accumulator.accumulate(weights, gradient,scale)
+        else accumulator.accumulate(weights, gradient)
+    }
   }
 
   def forwardAndBackPropagateOutputGradient(inputLayers:Iterable[InputLayer]):WeightsMap = {
@@ -106,9 +122,8 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
             else //update incoming count for this layer
               updatedInputFactors += l -> (ct+1,totalCt)
           } )
-        } else {
+        } else
           updatedInputLayers(f) = (nrInputs+1,totalNrInputs)
-        }
       }))
       currentLayers = nextLayers
       updatedLayers ++= currentLayers
@@ -134,9 +149,7 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
     val computationSeq = calculateComputationSeq(inputLayers) //cache that, so it doesnt have to be computed all the time
     override def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator): Unit = {
       _forwardPropagateInput(computationSeq,inputLayers)
-      val gradients = _backPropagateOutputGradient(computationSeq)
-      if(gradient != null)
-        gradients.keys.foreach(k => gradient.accumulate(k,gradients(k),scale))
+      val gradients = _backPropagateOutputGradient(computationSeq,gradient,scale)
       if(value != null)
         value.accumulate(outputLayers.foldLeft(0.0)(_ + _.lastObjective) * scale)
     }
@@ -155,9 +168,9 @@ trait FeedForwardNeuralNetworkModel extends NeuralNetworkModel with FastLogging 
       val diffPctThreshold: Double = 0.1
 
       g.keys.foreach(w => {
-        w.value.foreachActiveElement((i,v) => {
-          if(sample < 0 || rng.nextInt(w.value.activeDomainSize) < sample) {
-            val calcDeriv = g.apply(w)(i)
+        g(w).foreachActiveElement((i,calcDeriv) => {
+          if(sample < 0 || rng.nextInt(w.value.length) < sample) {
+            val v = w.value(i)
             w.value.update(i, v + epsilon)
             _forwardPropagateInput(computationSeq, inputLayers)
             val e1 = totalObjective(outputLayers)

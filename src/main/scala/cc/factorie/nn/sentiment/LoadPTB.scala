@@ -43,12 +43,6 @@ object LoadPTB extends RegexParsers {
       id+=1
       r
   }
-
-  def main (args: Array[String]) {
-    val sents = sentimentPTBFromFile(new File("/data/sentiment/trees/dev.txt"))
-    val h = sents.next()
-    h
-  }
 }
 
 case class SentimentPNode(score:Int, id:Int, c1:Int,c2:Int, var label:String="")

@@ -135,7 +135,7 @@ trait AdaptiveLearningRate extends GradientStep {
   var printed = false
   override def initializeWeights(weights: WeightsSet) {
     super.initializeWeights(weights)
-    if (HSq == null) HSq = weights.blankDenseMap
+    if (HSq == null) HSq = weights.blankMap
   }
   override def reset(): Unit = {
     super.reset()
@@ -145,7 +145,7 @@ trait AdaptiveLearningRate extends GradientStep {
     val eta = rate
 //    val l2 = 0.1
 //    gradient += (weightsSet, -l2)
-    if(HSq == null) HSq =  weights.blankDenseMap
+    if(HSq == null) HSq =  weights.blankMap
     for (template <- gradient.keys) {
       gradient(template) match {
         case t: Outer1Tensor2 if t.tensor1.isDense && t.tensor2.isDense =>
@@ -236,12 +236,12 @@ trait AdaptiveLearningRate extends GradientStep {
           val update = g.copy
           update *= g
           hSq += update
-          val hSq_scaled = hSq.blankCopy
+          /*val hSq_scaled = hSq.blankCopy
           hSq_scaled.foreachElement((i,_) => hSq_scaled.update(i,math.sqrt(hSq(i))))
           hSq_scaled += delta
           hSq_scaled *= 1.0/eta
-          g /= hSq_scaled
-          //.foreachActiveElement((i,v) => g.*=(i, eta / (math.sqrt(hSq(i)) + delta) ))
+          g /= hSq_scaled*/
+          g.foreachActiveElement((i,v) => g.update(i, v* eta / (math.sqrt(hSq(i)) + delta) ))
       }
   }
 }

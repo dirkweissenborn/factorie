@@ -12,6 +12,8 @@
    limitations under the License. */
 
 package cc.factorie.la
+
+import cc.factorie.nn.NNUtils
 import cc.factorie.util._
 
 trait Tensor2 extends Tensor {
@@ -697,7 +699,7 @@ class UniformTensor2(val dim1:Int, val dim2:Int, val uniformValue:Double) extend
 
 trait DenseLayeredTensorLike2 extends Tensor2 with SparseDoubleSeq {
   def newTensor1:Int=>Tensor1
-  private val _inners = new Array[Tensor1](dim1)
+  protected val _inners = new Array[Tensor1](dim1)
   override def zero() { _inners.foreach(i => if (i != null) i.zero()) }
   def activeDomain1 = { val a = new Array[Int](dim1); var i = 0; var j = 0; while (i < dim1) { if (_inners(i) ne null) { a(j) = i; j += 1 }; i += 1 }; new TruncatedArrayIntSeq(a, j) }
   def activeDomain2 = new RangeIntSeq(0, dim2) // This could perhaps be more sparse
@@ -715,7 +717,7 @@ trait DenseLayeredTensorLike2 extends Tensor2 with SparseDoubleSeq {
   def inner(i:Int): Tensor1 = getInner(i)
   protected def getInner(i:Int): Tensor1 = { var in = _inners(i); if (in eq null) { in = newTensor1(dim2); _inners(i) = in }; in }
   override def =+(a:Array[Double], offset:Int, f:Double): Unit = {
-    val len = _inners.length; var i = 0; while (i < len) { val in = _inners(i); if (in ne null) inner(i).=+(a, offset+i*dim1, f); i += 1 }
+    val len = _inners.length; var i = 0; while (i < len) { val in = _inners(i);if(in ne null) inner(i).=+(a, offset+i*dim1, f); i += 1 }
   }
   override def *(other: Tensor1): Tensor1 = {
     val out = new DenseTensor1(dim1)
@@ -736,11 +738,12 @@ trait DenseLayeredTensorLike2 extends Tensor2 with SparseDoubleSeq {
     case t:SingletonLayeredTensorLike2 => { getInner(t.singleIndex1).+=(t.inner, f) }
     case t:SingletonBinaryLayeredTensorLike2 => { getInner(t.singleIndex1).+=(t.inner, f) }
     case t:DenseLayeredTensorLike2 => { val len = t._inners.length; var i = 0; while (i < len) { if (t._inners(i) ne null) getInner(i).+=(t._inners(i), f); i += 1 } }
-    case t:Outer1Tensor2 => { val ff = f*t.scale; val t1 = t.tensor1; val l1 = t1.length; var i = 0; while (i < l1) { if (t1(i) != 0.0) { getInner(i).+=(t.tensor2, ff) }; i += 1 }}
+    case t:Outer1Tensor2 => { val ff = f*t.scale; val t1 = t.tensor1; t1.foreachActiveElement((i,v) => { getInner(i).+=(t.tensor2, ff*v) })}
     case t:TensorTimesScalar => this += (t.tensor, f * t.scalar)
     case t:DenseTensor => { val arr = t.asArray; var i = 0; while(i < arr.length) {this(i) += arr(i)*f ; i += 1}}
     case t:SparseIndexedTensor => { val len = t.activeDomainSize; val indices = t._indices; val values = t._values; var i = 0; while (i < len) { this(indices(i)) += values(i)*f ; i += 1}  }
     case t:Dense2LayeredTensor3 => { t.foreachActiveElement((i, v) => this(i) += v*f) }
+    case t:Tensor => t.foreachActiveElement((i,v) => +=(i,v))
     case t:DoubleSeq => throw new Error("Not yet implemented for class "+t.getClass.getName)
   }
   override def dot(t:DoubleSeq): Double = t match {
@@ -833,11 +836,40 @@ trait SingletonBinaryLayeredTensorLike2 extends Tensor2 with SparseDoubleSeq wit
     case t:SingletonBinaryLayeredTensorLike2 => if (singleIndex1 == t.singleIndex1) inner.dot(t.inner) else 0.0
     case t:SingletonLayeredTensorLike2 => if (singleIndex1 == t.singleIndex1) inner.dot(t.inner) * t.singleValue1 else 0.0
     case t:DenseLayeredTensorLike2 => t dot this
-    case t:DenseTensorLike2 => { var s = 0.0; this.foreachActiveElement((i,v) => s += t(i)*v); s }
+    case t:DenseTensorLike2 =>  var s = 0.0; this.foreachActiveElement((i,v) => s += t(i)*v); s
   }
 }
 class SingletonBinaryLayeredTensor2(val dim1:Int, val dim2:Int, var singleIndex1:Int, var inner:Tensor1) extends SingletonBinaryLayeredTensorLike2 {
   def activeDomainSize = inner.activeDomainSize
   override def copy = new SingletonBinaryLayeredTensor2(dim1, dim2, singleIndex1, inner)
+}
+
+//This is close to the implementation of DenseLayeredTensor2 but it creates new vectors with NNUtils. 
+class RowVectorMatrix(val dim1:Int, val dim2:Int, val newTensor1:Int => Tensor1) extends DenseLayeredTensorLike2 {
+  def init():RowVectorMatrix = {
+    for(i <- 0 until dim1) {
+      _inners(i) = newTensor1(dim2)
+    }
+    this
+  }
+  override def *(other: Tensor1): Tensor1 = {
+    val out = NNUtils.newDense(dim1)
+    for (i <- 0 until dim1; if inner(i) ne null) {
+      out(i) = inner(i) dot other
+    }
+    out
+  }
+  override def leftMultiply(other: Tensor1): Tensor1 = {
+    val out = NNUtils.newDense(dim2)
+    other.foreachActiveElement((i, v) => if (_inners(i) ne null) out += (inner(i),v))
+    out
+  }
+  override def copy: Tensor2 = {
+    val r = new RowVectorMatrix(dim1,dim2, d => NNUtils.newDense(d))
+    for (i <- 0 until dim1; if inner(i) != null)
+      r.update(i,inner(i).copy)
+    r
+  }
+  override def blankCopy: Tensor2 = new RowVectorMatrix(dim1,dim2,d => inner(0).blankCopy)
 }
 

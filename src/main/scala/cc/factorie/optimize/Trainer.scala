@@ -43,7 +43,7 @@ trait Trainer {
  */
 class BatchTrainer(val weightsSet: WeightsSet, val optimizer: GradientOptimizer = new LBFGS with L2Regularization, val maxIterations: Int = -1) extends Trainer with FastLogging {
   var iteration = 0
-  val gradientAccumulator = new LocalWeightsMapAccumulator(weightsSet.blankDenseMap)
+  val gradientAccumulator = new LocalWeightsMapAccumulator(weightsSet.blankMap)
   val valueAccumulator = new LocalDoubleAccumulator(0.0)
   // TODO This is sad:  The optimizer determines which of gradient/value/margin it needs, but we don't know here
   // so we create them all, possibly causing the Example to do more work.
@@ -124,7 +124,7 @@ class TwoStageTrainer(firstTrainer: Trainer, secondTrainer: Trainer) {
 class ParallelBatchTrainer(val weightsSet: WeightsSet, val optimizer: GradientOptimizer = new LBFGS with L2Regularization, val nThreads: Int = Runtime.getRuntime.availableProcessors(), val maxIterations: Int = -1)
   extends Trainer with FastLogging {
   var iteration = 0
-  val gradientAccumulator = new SynchronizedWeightsMapAccumulator(weightsSet.blankDenseMap)
+  val gradientAccumulator = new SynchronizedWeightsMapAccumulator(weightsSet.blankMap)
   val valueAccumulator = new SynchronizedDoubleAccumulator
   def processExamples(examples: Iterable[Example]): Unit = {
     iteration += 1
@@ -148,7 +148,7 @@ class ParallelBatchTrainer(val weightsSet: WeightsSet, val optimizer: GradientOp
 class ThreadLocalBatchTrainer(val weightsSet: WeightsSet, val optimizer: GradientOptimizer = new LBFGS with L2Regularization, numThreads: Int = Runtime.getRuntime.availableProcessors()) extends Trainer with FastLogging {
   def processExamples(examples: Iterable[Example]): Unit = {
     if (isConverged) return
-    val gradientAccumulator = new ThreadLocal(new LocalWeightsMapAccumulator(weightsSet.blankDenseMap))
+    val gradientAccumulator = new ThreadLocal(new LocalWeightsMapAccumulator(weightsSet.blankMap))
     val valueAccumulator = new ThreadLocal(new LocalDoubleAccumulator)
     val startTime = System.currentTimeMillis
     util.Threading.parForeach(examples, numThreads)(example => example.accumulateValueAndGradient(valueAccumulator.get, gradientAccumulator.get))
@@ -248,6 +248,7 @@ class ParallelOnlineTrainer(weightsSet: WeightsSet, val optimizer: GradientOptim
   private class LockingTensor1(val base: Tensor1) extends Tensor1 with LockingTensor {
     def dim1 = base.dim1
     override def copy = lock.withReadLock { base.copy }
+    override def blankCopy = lock.withReadLock { base.blankCopy }
   }
   private class LockingTensor2(val base: Tensor2) extends Tensor2 with LockingTensor {
     def dim1 = base.dim1
@@ -257,6 +258,7 @@ class ParallelOnlineTrainer(weightsSet: WeightsSet, val optimizer: GradientOptim
     override def *(other: Tensor1) = lock.withReadLock(base * other)
     override def leftMultiply(other: Tensor1) = lock.withReadLock(base leftMultiply other)
     override def copy = lock.withReadLock { base.copy }
+    override def blankCopy = lock.withReadLock { base.blankCopy }
   }
   private class LockingTensor3(val base: Tensor3) extends Tensor3 with LockingTensor {
     def dim1 = base.dim1
@@ -266,6 +268,7 @@ class ParallelOnlineTrainer(weightsSet: WeightsSet, val optimizer: GradientOptim
     def activeDomain2 = lock.withReadLock(base.activeDomain2)
     def activeDomain3 = lock.withReadLock(base.activeDomain3)
     override def copy = lock.withReadLock { base.copy }
+    override def blankCopy = lock.withReadLock { base.blankCopy }
   }
   private class LockingTensor4(val base: Tensor4) extends Tensor4 with LockingTensor {
     def dim1 = base.dim1
@@ -277,6 +280,7 @@ class ParallelOnlineTrainer(weightsSet: WeightsSet, val optimizer: GradientOptim
     def activeDomain3 = lock.withReadLock(base.activeDomain3)
     def activeDomain4 = lock.withReadLock(base.activeDomain4)
     override def copy = lock.withReadLock { base.copy }
+    override def blankCopy = lock.withReadLock { base.blankCopy }
   }
 }
 

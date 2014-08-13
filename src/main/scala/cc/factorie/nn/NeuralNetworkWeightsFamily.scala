@@ -104,7 +104,7 @@ trait NeuralTensorWeightsFamily[N1<:NeuralNetworkLayer,N2<:NeuralNetworkLayer,N3
     concatVector outer concatVector outer v3
   }
   override protected def _forwardPropagate(f: FamilyType#FactorType): Unit = weights.value match {
-    case w:FixedLayers2DenseTensor3 =>
+    case w:FixedLayers1DenseTensor3 =>
       val concatVector = NNUtils.concatenateTensor1(f._1.value, f._2.value)
       val input = NNUtils.fillDense(f._3.value.length)(k => (w.matrices(k) * concatVector) dot concatVector)
       f._3.incrementInput(input)
@@ -121,12 +121,12 @@ trait NeuralTensorWeightsFamily[N1<:NeuralNetworkLayer,N2<:NeuralNetworkLayer,N3
       f._3.incrementInput(input)
   }
   override protected def _backPropagateGradient(f: FamilyType#FactorType): Tensor = weights.value match {
-    case w:FixedLayers2DenseTensor3 =>
+    case w:FixedLayers1DenseTensor3 =>
       val concatVector = NNUtils.concatenateTensor1(f._1.value, f._2.value)
       val outerProd = concatVector outer concatVector
       val outGradient = f._3.objectiveGradient()
       val inputGradient = NNUtils.newDense(f._1.value.dim1 + f._2.value.dim1)
-      val weightGradient = new FixedLayers2DenseTensor3(
+      val weightGradient = new FixedLayers1DenseTensor3(
         (0 until w.dim3).foldLeft(new Array[Tensor2](w.dim3))((a,k) => {
           a(k) = (outerProd * outGradient(k)).asInstanceOf[Tensor2]
           val in_k = w.matrices(k) * concatVector

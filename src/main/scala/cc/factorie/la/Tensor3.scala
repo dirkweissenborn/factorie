@@ -392,7 +392,7 @@ trait Singleton2LayeredTensorLike3 extends Tensor3 with SparseDoubleSeq with Rea
 }
 class Singleton2LayeredTensor3(val dim1:Int, val dim2:Int, val dim3:Int, var singleIndex1:Int, var singleIndex2:Int, var singleValue1:Double, var singleValue2:Double, var inner:Tensor1) extends Singleton2LayeredTensorLike3
 
-class FixedLayers2DenseTensor3(val matrices:Array[Tensor2]) extends Tensor3 with DenseDoubleSeq {
+class FixedLayers1DenseTensor3(val matrices:Array[Tensor2]) extends Tensor3 with DenseDoubleSeq {
   private val m = matrices(0)
   assert(matrices.forall(m2 => m2.dim1 == m.dim1 && m2.dim2 == m.dim2))
   override def dim1: Int = m.dim1
@@ -415,15 +415,15 @@ class FixedLayers2DenseTensor3(val matrices:Array[Tensor2]) extends Tensor3 with
   override def foreachElement(f: (Int, Double) => Unit): Unit =
     (0 until dim3).foreach(k => matrices(k).foreachElement((ij,v) => f(ij*dim3+k,v)))
   override def dot(ds: DoubleSeq): Double = ds match {
-    case t:FixedLayers2DenseTensor3 => var sum = 0.0; (0 until dim3).foreach(k =>  sum += matrices(k) dot t.matrices(k) ); sum
+    case t:FixedLayers1DenseTensor3 => var sum = 0.0; (0 until dim3).foreach(k =>  sum += matrices(k) dot t.matrices(k) ); sum
     case _ => var sum = 0.0; ds.foreachActiveElement((i,v) => sum += apply(i)); sum
   }
   override def *=(ds: DoubleSeq): Unit = ds match {
-    case t:FixedLayers2DenseTensor3 => (0 until dim3).foreach(k => matrices(k) *= t.matrices(k) )
+    case t:FixedLayers1DenseTensor3 => (0 until dim3).foreach(k => matrices(k) *= t.matrices(k) )
     case _ => super.*=(ds)
   }
   override def +=(ds: DoubleSeq, factor: Double): Unit = ds match {
-    case t:FixedLayers2DenseTensor3 => (0 until dim3).foreach(k => matrices(k) += (t.matrices(k),factor) )
+    case t:FixedLayers1DenseTensor3 => (0 until dim3).foreach(k => matrices(k) += (t.matrices(k),factor) )
     case _ => super.+=(ds,factor)
   }
   override def +=(i: Int, incr: Double): Unit =  {
@@ -435,6 +435,6 @@ class FixedLayers2DenseTensor3(val matrices:Array[Tensor2]) extends Tensor3 with
     val (ij,k) = splitIndex(i)
     matrices(k).apply(ij)
   }
-  override def copy = new FixedLayers2DenseTensor3(matrices.map(_.copy))
-  override def blankCopy: FixedLayers2DenseTensor3 = new FixedLayers2DenseTensor3(matrices.map(_.blankCopy))
+  override def copy = new FixedLayers1DenseTensor3(matrices.map(_.copy))
+  override def blankCopy: FixedLayers1DenseTensor3 = new FixedLayers1DenseTensor3(matrices.map(_.blankCopy))
 }

@@ -98,8 +98,7 @@ object OptimizableObjectives {
 
   class SquaredMultivariate extends MultivariateOptimizableObjective[Tensor1] {
     def valueAndGradient(prediction: Tensor1, label: Tensor1): (Double, Tensor1) = {
-      for (i <- prediction.activeDomain)
-        prediction(i) -= label(i)
+      prediction += (label,-1.0)
       val value = -(prediction dot prediction)
       prediction *= -2
       (value, prediction)

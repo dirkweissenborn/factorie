@@ -20,13 +20,13 @@ object NNUtils  extends TensorImplementation {
   object JBLAS extends TensorImplementation {
     override def newDense(dim1: Int): Tensor1 = new JBlasTensor1(dim1)
     override def newDense(dim1: Int, dim2: Int): Tensor2 = new JBlasTensor2(dim1,dim2)
-    override def newDense(dim1: Int, dim2: Int, dim3: Int): Tensor3 = new FixedLayers2DenseTensor3(Array.fill(dim3)(new JBlasTensor2(dim1,dim2))) //Not Implemented yet, store an array of JBlasTensor2
+    override def newDense(dim1: Int, dim2: Int, dim3: Int): Tensor3 = new FixedLayers1DenseTensor3(Array.fill(dim3)(new JBlasTensor2(dim1,dim2))) //Not Implemented yet, store an array of JBlasTensor2
     override def newDense(dim1: Int, dim2: Int, dim3: Int, dim4: Int): Tensor4 = throw new NotImplementedError() //Not Implemented yet, store Array of JBLASTensor3
   }
   object EJML extends TensorImplementation {
     override def newDense(dim1: Int): Tensor1 = new EJMLTensor1(dim1)
     override def newDense(dim1: Int, dim2: Int): Tensor2 = new EJMLTensor2(dim1,dim2)
-    override def newDense(dim1: Int, dim2: Int, dim3: Int): Tensor3 = new FixedLayers2DenseTensor3(Array.fill(dim3)(new EJMLTensor2(dim1,dim2))) //Not Implemented yet, store an array of EJMLTensor2
+    override def newDense(dim1: Int, dim2: Int, dim3: Int): Tensor3 = new FixedLayers1DenseTensor3(Array.fill(dim3)(new EJMLTensor2(dim1,dim2))) //Not Implemented yet, store an array of EJMLTensor2
     override def newDense(dim1: Int, dim2: Int, dim3: Int, dim4: Int): Tensor4 = throw new NotImplementedError() //Not Implemented yet, store Array of EJMLTensor3
   }
 

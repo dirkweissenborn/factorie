@@ -39,7 +39,7 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
         (new childWeights1.Factor(childLayer1,this), new childWeights2.Factor(childLayer2,this))
       else (null,null)
 
-    lazy val tensorFactor:tensorWeights.FactorType = if(withTensors && childLayer1 != null) {
+    val tensorFactor:tensorWeights.FactorType = if(withTensors && childLayer1 != null) {
       val t = new tensorWeights.Factor(childLayer1,childLayer2,this)
       childLayer1.parentTensorFactor = t
       childLayer2.parentTensorFactor = t
@@ -49,7 +49,6 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
     if(childLayer1 != null) {
       childLayer1.parentFactor = childFactor1
       childLayer2.parentFactor = childFactor2
-      childLayer2.parentTensorFactor = tensorFactor
     }
     val output = new OutputLayer(node.score) {
       override val factor = new outputWeights.Factor(self, this)
@@ -88,7 +87,8 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
     override lazy val weights: Weights2 = Weights(NNUtils.fillDense(dim,numLabels)((_,_) => 2.0*(rand.nextDouble()-0.5)/math.sqrt(dim)))
   }
   val embeddings = new BasicLayerToLayerWeightsFamily[OneHotLayer, Layer] {
-    override lazy val weights: Weights2 = Weights(NNUtils.fillDense(tokenDomain.size,dim)((_,_) => rand.nextGaussian()))
+    //override lazy val weights: Weights2 = Weights(new RowVectorMatrix(tokenDomain.size,dim, d => NNUtils.fillDense(d)(_ => rand.nextGaussian())).init())
+    override lazy val weights: Weights2 = Weights(NNUtils.fillDense(tokenDomain.size,dim)((_,_) => rand.nextGaussian())) //faster than above
   }
 
   //Now define how to create a network given the input, and how to access all factors of a set of variables
@@ -139,7 +139,7 @@ object SentimentRNN extends FastLogging {
     domain.freeze()
 
     //create RNN
-    val model = new SentimentRNN(25,domain)
+    val model = new SentimentRNN(25,domain,withTensors = true)
 
     //create examples
     def createExamples(trees:Iterable[SentimentPTree]) = {
@@ -193,14 +193,14 @@ object SentimentRNN extends FastLogging {
     //train the model
     //Gradient check, built
     trainExamples.head.checkGradient(sample = 10)
-    while(iterations < 100) {
+    while(iterations < 400) {
       iterations += 1
       val trainer = new ParallelBatchTrainer(
         model.parameters,
         maxIterations = -1,
         optimizer = new AdaGrad(rate = 0.01,delta = 0.001) with L2Regularization { variance = 1000.0 }) //Adagrad with L2-regularization
 
-      trainExamples.grouped(batchSize).foreach(e => trainer.processExamples(e))
+      Random.shuffle(trainExamples).grouped(batchSize).foreach(e => trainer.processExamples(e))
       printEvaluation(trainExamples.map(_.outputLayers),"Train")
 
       devExamples.foreach(e => model.forwardPropagateInput(e._1))
