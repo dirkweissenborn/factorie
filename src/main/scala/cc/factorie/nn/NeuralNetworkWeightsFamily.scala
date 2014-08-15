@@ -155,6 +155,7 @@ trait NeuralTensorWeightsFamily[N1<:NeuralNetworkLayer,N2<:NeuralNetworkLayer,N3
   override protected def _backPropagate(f: FamilyType#FactorType): Unit = {}
 }
 
+//Use rather not concatenated version, which is twice as fast
 trait ConcatenatedNeuralTensorWeightsFamily[N1<:NeuralNetworkLayer,N2<:NeuralNetworkLayer,N3<:NeuralNetworkLayer] extends NeuralNetworkWeightsFamily3[N1,N2,N3] {
   override type FamilyType = NeuralTensorWeightsFamily[N1,N2,N3]
   override type FactorType = Factor

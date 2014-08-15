@@ -13,7 +13,7 @@ import scala.collection.mutable
 import scala.util.Random
 
 
-class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:Boolean = true, numLabels:Int = 5, activation:ActivationFunction = ActivationFunction.Tanh) extends FeedForwardNeuralNetworkModel {
+class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:Boolean = true, val numLabels:Int = 5, activation:ActivationFunction = ActivationFunction.Tanh) extends FeedForwardNeuralNetworkModel {
   assert(tokenDomain.frozen)
 
   private val rand = new Random(Random.nextInt())
@@ -123,6 +123,20 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
   }
 }
 
+class TernarySentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:Boolean = true, activation:ActivationFunction = ActivationFunction.Tanh) extends SentimentRNN(dim,tokenDomain,withTensors, 3,activation) {
+  override def createNetwork(input: Input, output: Output = None): (Iterable[InputLayer], Iterable[OutputLayer]) = {
+    val layers = new Array[Layer](input.nodes.length)
+    input.nodes.foreach(n => {
+      if(n.score > 2) n.score = 2
+      else if(n.score == 2) n.score = 1
+      else if(n.score < 2) n.score = 0
+      val layer = if(n.label!="") new Layer(n) else new Layer(n,layers(n.c1),layers(n.c2))
+      layers(n.id) = layer
+    })
+    (layers.withFilter(_.inputLayer != null).map(_.inputLayer),layers.map(_.output))
+  }
+}
+
 object SentimentRNN extends FastLogging {
   def train(train:File,test:File,dev:File) {
     NNUtils.setTensorImplementation(NNUtils.EJML)
@@ -140,7 +154,7 @@ object SentimentRNN extends FastLogging {
     domain.freeze()
 
     //create RNN
-    val model = new SentimentRNN(25,domain,withTensors = true)
+    val model = new TernarySentimentRNN(25,domain,withTensors = true)
 
     //create examples
     def createExamples(trees:Iterable[SentimentPTree]) = {
@@ -153,6 +167,7 @@ object SentimentRNN extends FastLogging {
     val testExamples = testTrees.map(t => model.createNetwork(t))
     val devExamples = devTrees.map(t => model.createNetwork(t)).toSeq
 
+    val zeroLabel = model.numLabels/2
     def printEvaluation(examples:Seq[Iterable[model.OutputLayer]], name:String) {
       val size = examples.size.toDouble
       val objective = examples.map(e => model.totalObjective(e)).sum / size
@@ -164,9 +179,9 @@ object SentimentRNN extends FastLogging {
       val fineGrainedAll = examples.map(_.count(e => {
         val t = e.target.value.maxIndex
         val a = e.value.maxIndex
-        if(t != 2) binaryAllTotal+=1
-        if(t > 2 && a > 2) binaryAll += 1
-        if(t < 2 && a < 2) binaryAll += 1
+        if(t != zeroLabel) binaryAllTotal+=1
+        if(t > zeroLabel && a > zeroLabel) binaryAll += 1
+        if(t < zeroLabel && a < zeroLabel) binaryAll += 1
         t == a
       })).sum / examples.map(_.size).sum.toDouble
 
@@ -174,9 +189,9 @@ object SentimentRNN extends FastLogging {
         val r = e.find(_.factor._1.parentFactor == null).get
         val t = r.target.value.maxIndex
         val a = r.value.maxIndex
-        if(t != 2) binaryRootTotal+=1
-        if(t > 2 && a > 2) binaryRoot += 1
-        if(t < 2 && a < 2) binaryRoot += 1
+        if(t != zeroLabel) binaryRootTotal+=1
+        if(t > zeroLabel && a > zeroLabel) binaryRoot += 1
+        if(t < zeroLabel && a < zeroLabel) binaryRoot += 1
         t == a
       }) / size
       logger.info(

@@ -45,7 +45,7 @@ object LoadPTB extends RegexParsers {
   }
 }
 
-case class SentimentPNode(score:Int, id:Int, c1:Int,c2:Int, var label:String="")
+case class SentimentPNode(var score:Int, id:Int, c1:Int,c2:Int, var label:String="")
 
 class SentimentPTree(val nodes:Array[SentimentPNode]) {
   //create lookup
