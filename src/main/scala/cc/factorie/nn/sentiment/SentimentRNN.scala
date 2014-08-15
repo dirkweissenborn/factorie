@@ -30,7 +30,8 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
     val factor:embeddings.FactorType
     override def toString: String = token
   }
-  class Layer(protected val node:SentimentPNode, childLayer1:Layer = null, childLayer2:Layer = null) extends BasicNeuralNetworkLayer(dim, activation) {
+  class Layer(protected val node:SentimentPNode, childLayer1:Layer = null, childLayer2:Layer = null)
+    extends BasicNeuralNetworkLayer(dim, activation) {
     self =>
     var parentFactor:BasicLayerToLayerWeightsFamily[Layer,Layer]#FactorType = null
     var parentTensorFactor:tensorWeights.FactorType = null
@@ -75,7 +76,7 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
     override lazy val weights: Weights2 = Weights(NNUtils.fillDense(dim,dim)((i,j) => { if(i==j)1.0 else 0.0 }+(rand.nextDouble()-0.5)/math.sqrt(dim)))
   }
   val tensorWeights = new NeuralTensorWeightsFamily[Layer,Layer,Layer] {
-    override lazy val weights: Weights3 = Weights(NNUtils.fillDense(dim*2,dim*2,dim)((i,j,k) => (rand.nextDouble()-0.5)/(2*dim)))
+    override lazy val weights: Weights3 = Weights(NNUtils.fillDense(dim,dim,dim)((i,j,k) => (rand.nextDouble()-0.5)/(2*dim)))
   }
   val bias = new Bias[Layer] {
     override lazy val weights: Weights1 = Weights(NNUtils.newDense(dim))
@@ -88,7 +89,7 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
   }
   val embeddings = new BasicLayerToLayerWeightsFamily[OneHotLayer, Layer] {
     //override lazy val weights: Weights2 = Weights(new RowVectorMatrix(tokenDomain.size,dim, d => NNUtils.fillDense(d)(_ => rand.nextGaussian())).init())
-    override lazy val weights: Weights2 = Weights(NNUtils.fillDense(tokenDomain.size,dim)((_,_) => rand.nextGaussian())) //faster than above
+    override lazy val weights: Weights2 = Weights(NNUtils.fillDense(tokenDomain.size,dim)((_,_) => rand.nextDouble()/10000.0)) //faster than above
   }
 
   //Now define how to create a network given the input, and how to access all factors of a set of variables

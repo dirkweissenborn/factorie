@@ -95,6 +95,69 @@ trait BasicLayerToLayerWeightsFamily[N1 <: NeuralNetworkLayer, N2 <:NeuralNetwor
 trait NeuralTensorWeightsFamily[N1<:NeuralNetworkLayer,N2<:NeuralNetworkLayer,N3<:NeuralNetworkLayer] extends NeuralNetworkWeightsFamily3[N1,N2,N3] {
   override type FamilyType = NeuralTensorWeightsFamily[N1,N2,N3]
   override type FactorType = Factor
+  //dimensionality: dim1 x dim2 x dim3
+  override def weights: Weights3
+  override protected def _outputLayers(f: FamilyType#FactorType): Seq[NeuralNetworkLayer] = Seq(f._3)
+  override protected def _inputLayers(f: FamilyType#FactorType): Seq[NeuralNetworkLayer] = Seq(f._1, f._2)
+  override def statistics(v1: Tensor1, v2: Tensor1, v3: Tensor1): Tensor = {
+    v1 outer v2 outer v3
+  }
+  override protected def _forwardPropagate(f: FamilyType#FactorType): Unit = weights.value match {
+    case w:FixedLayers1DenseTensor3 =>
+      val input = NNUtils.fillDense(f._3.value.length)(k => (w.matrices(k) * f._2.value) dot f._1.value)
+      f._3.incrementInput(input)
+    case w: Tensor3 =>
+      val input = NNUtils.newDense(f._3.value.length)
+      for (k <- 0 until input.dim1)
+        for (i <- 0 until f._1.value.dim1)
+          for (j <- 0 until f._2.value.dim1) {
+            val v1 = f._1.value(i)
+            val v2 =f._2.value(j)
+            val weight: Double = weights.value(i, j, k)
+            input +=(k, weight * v1 * v2)
+          }
+      f._3.incrementInput(input)
+  }
+  override protected def _backPropagateGradient(f: FamilyType#FactorType): Tensor = weights.value match {
+    case w:FixedLayers1DenseTensor3 =>
+      val outerProd = f._1.value outer f._2.value
+      val outGradient = f._3.objectiveGradient()
+      val weightGradient = new FixedLayers1DenseTensor3(
+        (0 until w.dim3).foldLeft(new Array[Tensor2](w.dim3))((a,k) => {
+          a(k) = (outerProd * outGradient(k)).asInstanceOf[Tensor2]
+          if(!f._1.isInstanceOf[InputNeuralNetworkLayer])
+            f._1.incrementObjectiveGradient((w.matrices(k) * f._2.value) * outGradient(k))
+          if(!f._2.isInstanceOf[InputNeuralNetworkLayer])
+            f._2.incrementObjectiveGradient((f._1.value * w.matrices(k)) * outGradient(k))
+          a
+        }))
+      weightGradient
+    case w: Tensor3 =>
+      val outGradient = f._3.objectiveGradient()
+      val weightGradient = w.blankCopy
+      for (k <- 0 until weightGradient.dim3) {
+        val outputGradient = outGradient(k)
+        for (i <- 0 until weightGradient.dim1)
+          for (j <- 0 until weightGradient.dim2) {
+            val v1 = f._1.value(i)
+            val v2 = f._2.value(j)
+            weightGradient.update(i, j, k, v1 * v2 * outputGradient)
+            if(!f._1.isInstanceOf[InputNeuralNetworkLayer])
+              f._1.objectiveGradient().+=(i, v2 * w(i, j, k) * outputGradient)
+            if(!f._2.isInstanceOf[InputNeuralNetworkLayer])
+              f._2.objectiveGradient().+=(j, v1 * w(i, j, k) * outputGradient)
+          }
+      }
+      weightGradient
+    case _ => throw new IllegalArgumentException(s"Weights value of ${getClass.getSimpleName} must be of type Tensor3!")
+  }
+
+  override protected def _backPropagate(f: FamilyType#FactorType): Unit = {}
+}
+
+trait ConcatenatedNeuralTensorWeightsFamily[N1<:NeuralNetworkLayer,N2<:NeuralNetworkLayer,N3<:NeuralNetworkLayer] extends NeuralNetworkWeightsFamily3[N1,N2,N3] {
+  override type FamilyType = NeuralTensorWeightsFamily[N1,N2,N3]
+  override type FactorType = Factor
   //dimensionality: (dim1+dim2) x (dim1+dim2) x dim3
   override def weights: Weights3
   override protected def _outputLayers(f: FamilyType#FactorType): Seq[NeuralNetworkLayer] = Seq(f._3)
@@ -131,12 +194,15 @@ trait NeuralTensorWeightsFamily[N1<:NeuralNetworkLayer,N2<:NeuralNetworkLayer,N3
           a(k) = (outerProd * outGradient(k)).asInstanceOf[Tensor2]
           val in_k = w.matrices(k) * concatVector
           in_k += (concatVector * w.matrices(k))
-          inputGradient += (in_k, outGradient(k))
+          if(!f._1.isInstanceOf[InputNeuralNetworkLayer] || !f._2.isInstanceOf[InputNeuralNetworkLayer] )
+            inputGradient += (in_k, outGradient(k))
           a
         }))
       val (firstGradient,secondGradient) = NNUtils.splitTensor1(inputGradient,f._1.value.dim1)
-      f._1.incrementObjectiveGradient(firstGradient)
-      f._2.incrementObjectiveGradient(secondGradient)
+      if(!f._1.isInstanceOf[InputNeuralNetworkLayer])
+        f._1.incrementObjectiveGradient(firstGradient)
+      if( !f._2.isInstanceOf[InputNeuralNetworkLayer] )
+        f._2.incrementObjectiveGradient(secondGradient)
       weightGradient
     case w: Tensor3 =>
       val outGradient = f._3.objectiveGradient()
@@ -148,8 +214,10 @@ trait NeuralTensorWeightsFamily[N1<:NeuralNetworkLayer,N2<:NeuralNetworkLayer,N3
             val v1 = if (i < f._1.value.dim1) f._1.value(i) else f._2.value(i - f._1.value.dim1)
             val v2 = if (j < f._1.value.dim1) f._1.value(j) else f._2.value(j - f._1.value.dim1)
             weightGradient.update(i, j, k, v1 * v2 * outputGradient)
-            if (i < f._1.value.dim1) f._1.objectiveGradient().+=(i, v2 * w(i, j, k) * outputGradient) else f._2.objectiveGradient().+=(i - f._1.value.dim1, v2 * w(i, j, k) * outputGradient)
-            if (j < f._1.value.dim1) f._1.objectiveGradient().+=(j, v1 * w(i, j, k) * outputGradient) else f._2.objectiveGradient().+=(j - f._1.value.dim1, v1 * w(i, j, k) * outputGradient)
+            if(!f._1.isInstanceOf[InputNeuralNetworkLayer])
+              if (i < f._1.value.dim1) f._1.objectiveGradient().+=(i, v2 * w(i, j, k) * outputGradient) else f._2.objectiveGradient().+=(i - f._1.value.dim1, v2 * w(i, j, k) * outputGradient)
+            if( !f._2.isInstanceOf[InputNeuralNetworkLayer] )
+              if (j < f._1.value.dim1) f._1.objectiveGradient().+=(j, v1 * w(i, j, k) * outputGradient) else f._2.objectiveGradient().+=(j - f._1.value.dim1, v1 * w(i, j, k) * outputGradient)
           }
       }
       weightGradient
