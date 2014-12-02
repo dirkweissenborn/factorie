@@ -23,7 +23,7 @@ class TestFeedForwardNeuralNetwork extends FlatSpec {
  // NNUtils.setTensorImplementation(NNUtils.JBLAS)
 
   "Gradient checks" should "not fail for a basic feed forward neural network" in {
-    val model = new BasicFeedForwardNeuralNetwork(Array((2,ActivationFunction.Tanh),(10,ActivationFunction.Tanh),(1,ActivationFunction.Tanh)))
+    val model = new BasicFeedForwardNN(Array((2,ActivationFunction.Tanh),(10,ActivationFunction.Tanh),(1,ActivationFunction.Tanh)))
     val pairs = Seq(
       model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => 1.0)),
       model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => -1.0)),

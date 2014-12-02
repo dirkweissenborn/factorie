@@ -13,10 +13,9 @@
 package cc.factorie.model
 
 import cc.factorie.la._
-import cc.factorie.nn.  NNUtils
+import cc.factorie._
 import scala.collection.mutable
 import cc.factorie.variable.TensorVar
-import cc.factorie._
 
 /** An object with a "parameters" method, which returns a WeightsSet holding the multiple Tensors that make up the parameters.
     This trait also provides methods called "Weights" which create new Weights objects that are automatically added to the parameters WeightsSet.

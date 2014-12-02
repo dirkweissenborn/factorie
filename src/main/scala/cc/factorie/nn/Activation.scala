@@ -1,6 +1,6 @@
 package cc.factorie.nn
 
-import cc.factorie.la.{UniformTensor1, Tensor1}
+import cc.factorie.la.{Tensor, UniformTensor1, Tensor1}
 
 import scala.collection.mutable
 import scala.util.Random
@@ -14,8 +14,8 @@ import scala.util.Random
  * @author Dirk Weißenborn
  *
  */
-trait ActivationFunction extends Function[Tensor1, Unit] {
-
+trait ActivationFunction {
+  def apply(v:Tensor1):Unit
   //transformations directly on input
   def applyDerivative(input: Tensor1): Tensor1
   def typ: String

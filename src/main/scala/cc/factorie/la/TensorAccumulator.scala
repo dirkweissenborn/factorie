@@ -92,7 +92,7 @@ class SmartGradientAccumulator extends WeightsMapAccumulator {
             map(key) = t2
           case t: Tensor =>
             stateMap(key) = ACCUMULATOR
-            val t2 = Tensor.newDense(t)
+            val t2 = t.blankCopy
             t2 += (t,d)
             map(key) = t2
         }

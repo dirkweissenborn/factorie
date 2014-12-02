@@ -13,7 +13,6 @@
 
 package cc.factorie.la
 
-import cc.factorie.nn.NNUtils
 import cc.factorie.util._
 
 trait Tensor2 extends Tensor {
@@ -844,7 +843,6 @@ class SingletonBinaryLayeredTensor2(val dim1:Int, val dim2:Int, var singleIndex1
   override def copy = new SingletonBinaryLayeredTensor2(dim1, dim2, singleIndex1, inner)
 }
 
-//This is close to the implementation of DenseLayeredTensor2 but it creates new vectors with NNUtils. 
 class RowVectorMatrix(val dim1:Int, val dim2:Int, val newTensor1:Int => Tensor1) extends DenseLayeredTensorLike2 {
   def init():RowVectorMatrix = {
     for(i <- 0 until dim1) {
@@ -853,19 +851,19 @@ class RowVectorMatrix(val dim1:Int, val dim2:Int, val newTensor1:Int => Tensor1)
     this
   }
   override def *(other: Tensor1): Tensor1 = {
-    val out = NNUtils.newDense(dim1)
+    val out = newTensor1(dim1)
     for (i <- 0 until dim1; if inner(i) ne null) {
       out(i) = inner(i) dot other
     }
     out
   }
   override def leftMultiply(other: Tensor1): Tensor1 = {
-    val out = NNUtils.newDense(dim2)
+    val out = newTensor1(dim2)
     other.foreachActiveElement((i, v) => if (_inners(i) ne null) out += (inner(i),v))
     out
   }
   override def copy: Tensor2 = {
-    val r = new RowVectorMatrix(dim1,dim2, d => NNUtils.newDense(d))
+    val r = new RowVectorMatrix(dim1,dim2, d => newTensor1(d))
     for (i <- 0 until dim1; if inner(i) != null)
       r.update(i,inner(i).copy)
     r
