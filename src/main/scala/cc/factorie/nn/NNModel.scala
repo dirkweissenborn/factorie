@@ -30,7 +30,7 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
   type OrderedConnections = Seq[(Iterable[Connection],Iterable[NNLayer])]
 
   def totalObjective(outputLayers:Iterable[OutputLayer]) = {
-    outputLayers.map(o => {
+    outputLayers.view.map(o => {
       o.objectiveGradient
       o.lastObjective
     }).sum
@@ -57,17 +57,16 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
 
   protected def _backPropagateOutputGradient(orderedConnections: OrderedConnections): WeightsMap = {
     val map = new WeightsMap(key => key.value.blankCopy)
-    orderedConnections.foreach(_._2.withFilter(!_.isInstanceOf[OutputLayer]).foreach(_.zeroObjectiveGradient()))
+    orderedConnections.foreach(_._2.withFilter(!_.isInstanceOf[OutputNNLayer]).foreach(_.zeroObjectiveGradient()))
     val gradients = orderedConnections.reverseIterator.flatMap(cs => {
       //multiply accumulated gradient with derivative of activation
       cs._2.foreach(_.updateObjectiveGradient())
       //backpropagate gradient
-      val e = cs._1.flatMap(f => {val grad = f.backPropagateGradient; if(grad != null) Some(f.family.weights -> f.backPropagateGradient) else None})
+      val e = cs._1.flatMap(f => {val grad = f.backPropagateGradient; if(grad != null) Some(f.family.weights -> grad) else None})
       e
     })
     gradients.foreach{
-      case (weights,gradient) =>
-        map(weights) += gradient
+      case (weights,gradient) => map(weights) += gradient
     }
     map
   }
@@ -97,12 +96,11 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
   //computes the DAG starting from the input layers and returns a seq of independent factors and layers which inputs comes only from factors up to this point
   //Override this if there is a more efficient way of computing this (e.g.: see BasicFeedForwardNeuralNetwork)
   def calculateComputationSeq(inputLayers:Iterable[InputLayer]): OrderedConnections = {
-    var currentLayers = mutable.HashSet[NNLayer]() ++ inputLayers
-    val updatedLayers = mutable.HashSet[NNLayer]() ++ inputLayers
+    var currentLayers = mutable.HashSet[NNLayer]() ++= inputLayers
     val connectionSeq = ArrayBuffer[(ArrayBuffer[Connection],Iterable[NNLayer])]()
 
-    val updatedInputLayers = mutable.Map[Connection,(Int,Int)]()
-    val updatedInputConnections = mutable.Map[NNLayer,(Int,Int)]()
+    val updatedInputLayers = mutable.Map[Connection,(Int,Int)]()  //connection -> (#currently activated input layers,#total inputs), if both are equal the connection can be activated
+    val updatedInputConnections = mutable.Map[NNLayer,(Int,Int)]() //layer -> (#currently activated input connections,#total inputs), if both are equal the layer can be activated
 
     while(currentLayers.nonEmpty) {
       val nextConnections = ArrayBuffer[Connection]()
@@ -112,31 +110,44 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
         val (nrInputs,totalNrInputs) = updatedInputLayers.getOrElseUpdate(f,(0,f.inputLayers.size))
         if (nrInputs == totalNrInputs - 1) {
           nextConnections += f
-          //update number of incoming activated factors for each output layer of this factor; if full, add it to nextConnections
+          //update number of incoming activated connections for each output layer of this connection; if full, add it to nextConnections
           outLayers.foreach(l => {
             val (ct,totalCt) =
-              updatedInputConnections.getOrElseUpdate(l, {val inConnections = inputConnections(l); (inConnections.count(_.numVariables == 1),inConnections.size) }) //initialize with number of biases
+              updatedInputConnections.getOrElseUpdate(l, {
+                val inConnections = inputConnections(l)
+                (inConnections.count(_.numVariables == 1),inConnections.size)
+              }) //initialize with number of biases
             if(ct == totalCt - 1) //this layer got full input, add it as next layer
               nextLayers += l
-            else //update incoming count for this layer
+            else //update activated connections count for this layer
               updatedInputConnections += l -> (ct+1,totalCt)
           } )
-        } else
+        } else //update activated input layers count for this connection
           updatedInputLayers(f) = (nrInputs+1,totalNrInputs)
       }))
       currentLayers = nextLayers
-      updatedLayers ++= currentLayers
 
-      //Add biases
-      currentLayers.foreach(l => nextConnections ++= inputConnections(l).filter(_.numVariables == 1))
+      //add biases of nextLayers
+      currentLayers.foreach(l => nextConnections ++= inputConnections(l).view.filter(_.numVariables == 1))
       if(nextConnections.nonEmpty)
         connectionSeq += ((nextConnections,nextLayers))
     }
     connectionSeq
   }
 
-  def inputConnections(layer: NNLayer):Iterable[Connection]
-  def outputConnections(layer: NNLayer):Iterable[Connection]
+  def newConnection(weights:NNWeights,layers:Seq[NNLayer]):Connection = {
+    val c = weights.newConnection(layers)
+    c.outputLayers.map(l => l.addInConnection(c))
+    c.inputLayers.map(l => l.addOutConnection(c))
+    c
+  }
+  def newConnection[L1 <: NNLayer](weights:NNWeights1[L1],l1:L1):Connection = newConnection(weights,Seq(l1))
+  def newConnection[L1 <: NNLayer,L2 <: NNLayer](weights:NNWeights2[L1,L2],l1:L1,l2:L2):Connection = newConnection(weights,Seq(l1,l2))
+  def newConnection[L1 <: NNLayer,L2 <: NNLayer,L3 <: NNLayer](weights:NNWeights3[L1,L2,L3],l1:L1,l2:L2,l3:L3):Connection = newConnection(weights,Seq(l1,l2,l3))
+  def newConnection[L1 <: NNLayer,L2 <: NNLayer,L3 <: NNLayer,L4 <: NNLayer](weights:NNWeights4[L1,L2,L3,L4],l1:L1,l2:L2,l3:L3,l4:L4):Connection = newConnection(weights,Seq(l1,l2,l3,l4))
+
+  def inputConnections(layer: NNLayer):Iterable[Connection] = layer.inConnections
+  def outputConnections(layer: NNLayer):Iterable[Connection] = layer.outConnections
 
   def connections(layer: NNLayer): Iterable[Connection] = inputConnections(layer) ++ outputConnections(layer)
 
@@ -154,7 +165,6 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
     }
     //sample is number of samples per weights
     def checkGradient(gradient:WeightsMap = null, sample:Int = -1) = {
-      var check = true
       val g = {
         if (gradient == null) {
           _forwardPropagateInput(computationSeq,inputLayers)
@@ -166,8 +176,8 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
       val diffThreshold: Double = 0.01
       val diffPctThreshold: Double = 0.1
 
-      g.keys.foreach(w => {
-        g(w).foreachActiveElement((i,calcDeriv) => {
+      g.keys.forall(w => {
+        g(w).forallActiveElements((i,calcDeriv) => {
           if(sample < 0 || rng.nextInt(w.value.length) < sample) {
             val v = w.value(i)
             w.value.update(i, v + epsilon)
@@ -181,28 +191,14 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
             val pct = diff / Math.min(Math.abs(appDeriv), Math.abs(calcDeriv))
             w.value.update(i, v)
             if (diff > diffThreshold && pct > diffPctThreshold) {
-              check = false
               logger.warn(s"gradient check failed with difference: $diff > $diffThreshold")
-            }
-          }
+              false
+            } else true
+          } else true
         })
       })
-      check
     }
   }
-}
-
-trait ItemizedFeedForwardNN extends FeedForwardNNModel {
-  private val inConnections = mutable.Map[NNLayer,List[Connection]]()
-  private val outConnections = mutable.Map[NNLayer,List[Connection]]()
-  def newConnection(weights:NNWeights,layers:NNLayer*) = {
-    val c = weights.newConnection(layers)
-    c.outputLayers.map(l => inConnections += l -> (c :: inConnections.getOrElse(l,List[Connection]())))
-    c.inputLayers.map(l => outConnections += l -> (c :: outConnections.getOrElse(l,List[Connection]())))
-    c
-  }
-  override def inputConnections(layer: NNLayer): Iterable[Connection] = inConnections.getOrElse(layer,List[Connection]())
-  override def outputConnections(layer: NNLayer): Iterable[Connection] = outConnections.getOrElse(layer,List[Connection]())
 }
 
 //Example feed-forward model
@@ -230,26 +226,15 @@ class BasicFeedForwardNN(structure:Array[(Int,ActivationFunction)],objectiveFunc
 
   trait Layer extends NNLayer {
     def index:Int
-    var nextConnection:BasicLayerToLayerWeights[Layer,Layer]#ConnectionType = null.asInstanceOf[BasicLayerToLayerWeights[Layer,Layer]#ConnectionType]
-    var prevConnection:BasicLayerToLayerWeights[Layer,Layer]#ConnectionType = null.asInstanceOf[BasicLayerToLayerWeights[Layer,Layer]#ConnectionType]
-    lazy val bias:Bias[Layer]#ConnectionType = {
-      if (index > 0) {
-        val bias = biases(index-1)
-        new bias.Connection(this)
-      }
-      else null
-    }
+    var next:Layer = null
+    if(index > 0)
+      newConnection(biases(index - 1),this)
   }
   class InnerLayer(override val index:Int) extends BasicNNLayer(structure(index)._1,structure(index)._2) with Layer {
-    nextConnection = {
-      if (index < structure.length - 2){
-        val w = weights(index)
-        new w.Connection(this, new InnerLayer(index + 1))
-      }
-      else null
+    if(index < structure.length - 2) {
+      next = new InnerLayer(index + 1)
+      newConnection(weights(index), this, next)
     }
-    if(nextConnection != null)
-      nextConnection._2.prevConnection = nextConnection
   }
 
   class OutputLayer extends BasicOutputNNLayer(NNUtils.newDense(structure.last._1),structure(structure.length-1)._2,objectiveFunction) with Layer {
@@ -260,44 +245,13 @@ class BasicFeedForwardNN(structure:Array[(Int,ActivationFunction)],objectiveFunc
     val inputLayer = new InnerLayer(0) with InputLayer
     inputLayer.set(input)(null)
     var l:Layer = inputLayer
-    while(l.nextConnection != null)
-      l = l.nextConnection._2
-    val out = new OutputLayer with LabeledNNLayer {
+    while(l.next != null)
+      l = l.next
+    val out = if(output != null) new OutputLayer with LabeledNNLayer {
       override val target = new BasicTargetNNLayer(output,this)
-    }
-    val c = weights.last.newConnection(l, out)
-    l.nextConnection = c
-    out.prevConnection = c
-    (Iterable(inputLayer),Iterable(l.asInstanceOf[OutputLayer]))
+    } else new OutputLayer
+    newConnection(weights.last, l, out)
+    (Iterable(inputLayer),Iterable(out))
   }
-
-  override def createNetwork(input: Input): (Iterable[InputLayer], Iterable[OutputLayer]) = {
-    val inputLayer = new InnerLayer(0) with InputLayer
-    inputLayer.set(input)(null)
-    var l:Layer = inputLayer
-    while(l.nextConnection != null)
-      l = l.nextConnection._2
-    val out = new OutputLayer //create no labeled var here
-    val c = weights.last.newConnection(l, out)
-    l.nextConnection = c
-    out.prevConnection = c
-    (Iterable(inputLayer),Iterable(l.asInstanceOf[OutputLayer]))
-  }
-
-  override def inputConnections(variable: NNLayer): Iterable[Connection] = variable match {
-    case v:Layer =>
-      var cs = List[Connection]()
-      if(v.prevConnection != null)
-        cs ::= v.prevConnection.asInstanceOf[Connection]
-      if(v.bias!=null)
-        cs ::= v.bias.asInstanceOf[Connection]
-      cs
-  }
-  override def outputConnections(variable: NNLayer): Iterable[Connection] = variable match {
-    case v:Layer =>
-      if(v.nextConnection != null)
-        List(v.nextConnection)
-      else
-        List[Connection]()
-  }
+  override def createNetwork(input: Input): (Iterable[InputLayer], Iterable[OutputLayer]) = createNetwork(input,null)
 }

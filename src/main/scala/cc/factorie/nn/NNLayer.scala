@@ -31,6 +31,10 @@ trait NNLayer extends MutableTensorVar {
       })
     } else _objectiveGradient *= activationFunction.applyDerivative(input)
   }
+  protected[nn] var inConnections = List[NNWeights#Connection]()
+  protected[nn] var outConnections = List[NNWeights#Connection]()
+  protected[nn] def addInConnection(c:NNWeights#Connection) = inConnections ::= c //We could check if it is really an incoming connection, but we don't for performance
+  protected[nn] def addOutConnection(c:NNWeights#Connection) = outConnections ::= c //We could check if it is really an incoming connection, but we don't for performance
 }
 
 trait OutputNNLayer extends NNLayer {
@@ -50,7 +54,7 @@ trait LabeledNNLayer extends NNLayer with LabeledMutableVar with OutputNNLayer {
     gradient
   }
 
-  //only needed for hidden units after accumulating their error from parent factors
+  //only needed for hidden units after accumulating their error from parent connections
   final override def updateObjectiveGradient(): Unit = {}
   final override def zeroObjectiveGradient(): Unit = {}
 }
@@ -94,8 +98,8 @@ trait InputNNLayer extends NNLayer {
 }
 
 class BasicOutputNNLayer(initialValue:Tensor1,
-                                    activationFunction:ActivationFunction = ActivationFunction.SoftMax,
-                                    override val objectiveFunction:MultivariateOptimizableObjective[Tensor1] = new SquaredMultivariate) extends BasicNNLayer(initialValue,activationFunction) with OutputNNLayer {
+                        activationFunction:ActivationFunction = ActivationFunction.SoftMax,
+                        override val objectiveFunction:MultivariateOptimizableObjective[Tensor1] = new SquaredMultivariate) extends BasicNNLayer(initialValue,activationFunction) with OutputNNLayer {
   override def incrementObjectiveGradient(in:Tensor1) = throw new IllegalAccessException("You cannot increment the error of an output layer, it is calculated from its target")
   protected var _lastObjective:Double = 0.0
   override def lastObjective: Double = _lastObjective

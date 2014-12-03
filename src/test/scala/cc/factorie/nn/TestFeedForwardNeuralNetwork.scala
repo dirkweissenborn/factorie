@@ -3,13 +3,16 @@ package cc.factorie.nn
 import cc.factorie.la.DenseTensor1
 import cc.factorie.nn.sentiment.{LoadPTB, SentimentRNN}
 import cc.factorie.variable.CategoricalDomain
+import org.junit.runner.RunWith
 import org.scalatest._
+import org.scalatest.junit.JUnitRunner
 
 import scala.util.Random
 
 /**
  * Created by diwe01 on 24.07.14.
  */
+@RunWith(classOf[JUnitRunner])
 class TestFeedForwardNeuralNetwork extends FlatSpec {
   self =>
 
@@ -23,7 +26,7 @@ class TestFeedForwardNeuralNetwork extends FlatSpec {
  // NNUtils.setTensorImplementation(NNUtils.JBLAS)
 
   "Gradient checks" should "not fail for a basic feed forward neural network" in {
-    val model = new BasicFeedForwardNN(Array((2,ActivationFunction.Tanh),(10,ActivationFunction.Tanh),(1,ActivationFunction.Tanh)))
+    val model = new BasicFeedForwardNN(Array((2,ActivationFunction.Tanh),(10,ActivationFunction.Sigmoid),(1,ActivationFunction.Sigmoid)))
     val pairs = Seq(
       model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => 1.0)),
       model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => -1.0)),

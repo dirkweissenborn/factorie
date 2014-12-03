@@ -10,7 +10,6 @@ import cc.factorie.util.FastLogging
 import cc.factorie.variable.CategoricalDomain
 import scala.util.Random
 
-//Todo, can be tranformed to ItemizedFeedForwardNeuralNetwork, which handles connections... Removes complexity from the implementation
 class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:Boolean = true, val numLabels:Int = 5, activation:ActivationFunction = ActivationFunction.Tanh) extends FeedForwardNNModel {
   assert(tokenDomain.frozen)
 
@@ -19,52 +18,31 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
   // #### First define layers of this network, input and output ####
   override type Output = Any //included in input
   override type Input = SentimentPTree
-  abstract class OutputLayer(label:Int) extends BasicOutputNNLayer({val t = NNUtils.newDense(numLabels);t.+=(label,1.0);t}) with LabeledNNLayer {
-    val connection:outputWeights.ConnectionType
+  case class OutputLayer(label:Int, inputLayer:Layer) extends BasicOutputNNLayer({val t = NNUtils.newDense(numLabels);t.+=(label,1.0);t}) with LabeledNNLayer {
     override def toString: String = s"Sentiment: $label"
-    val biasF = new outBias.Connection(this)
     override val target = new BasicTargetNNLayer(value.copy, this)
+    newConnection(outBias,this)
   }
-  abstract class InputLayer(val token:String) extends OneHotNNLayer(new SingletonBinaryTensor1(tokenDomain.size, tokenDomain.index(token))) {
-    val connection:embeddings.ConnectionType
+  case class InputLayer(token:String) extends OneHotNNLayer(new SingletonBinaryTensor1(tokenDomain.size, tokenDomain.index(token))) {
     override def toString: String = token
   }
-  class Layer(protected val node:SentimentPNode, childLayer1:Layer = null, childLayer2:Layer = null)
+  case class Layer(node:SentimentPNode, childLayer1:Layer = null, childLayer2:Layer = null, isRoot:Boolean = false)
     extends BasicNNLayer(dim, activation) {
-    self =>
-    var parentConnection:BasicLayerToLayerWeights[Layer,Layer]#ConnectionType = null
-    var parentTensorConnection:tensorWeights.ConnectionType = null
-    val (childConnection1,childConnection2) =
-      if(childLayer1 != null)
-        (new childWeights1.Connection(childLayer1,this), new childWeights2.Connection(childLayer2,this))
-      else (null,null)
-
-    val tensorConnection:tensorWeights.ConnectionType = if(withTensors && childLayer1 != null) {
-      val t = new tensorWeights.Connection(childLayer1,childLayer2,this)
-      childLayer1.parentTensorConnection = t
-      childLayer2.parentTensorConnection = t
-      t
-    } else null
 
     if(childLayer1 != null) {
-      childLayer1.parentConnection = childConnection1
-      childLayer2.parentConnection = childConnection2
+      newConnection(childWeights1,childLayer1,this)
+      newConnection(childWeights2,childLayer2,this)
+      if(withTensors) newConnection(tensorWeights,childLayer1,childLayer2,this)
     }
-    val output = new OutputLayer(node.score) {
-      override val connection = new outputWeights.Connection(self, this)
-    }
-    lazy val outputConnection = output.connection
-    val inputLayer = if(node.label!="") new InputLayer(node.label) {
-      override val connection: embeddings.ConnectionType = new embeddings.Connection(this,self)
-    } else null
-    lazy val inputConnection = inputLayer.connection
+    val output = OutputLayer(node.score,this)
+    newConnection(outputWeights, this, output)
+    val inputLayer:InputLayer = if(node.label!="") InputLayer(node.label) else null
+    if(inputLayer != null) newConnection(embeddings,inputLayer,this)
+    newConnection(bias,this)
 
     private lazy val treeString ={
       "("+node.score+" "+ {if(childLayer1==null)node.label else childLayer1.toString()} + {if(childLayer2!=null) " "+childLayer2.toString() else "" } + ")"
     }
-
-    val biasF = new bias.Connection(this)
-
     override def toString: String = treeString
   }
   //define weight families
@@ -91,47 +69,31 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
     override lazy val weights: Weights2 = Weights(NNUtils.fillDense(tokenDomain.size,dim)((_,_) => rand.nextDouble()/10000.0)) //faster than above
   }
 
-  //Now define how to create a network given the input, and how to access all factors of a set of variables
-
+  //Now define how to create a network given the input
   //creates network input and corresponding output. It is possible that the network architecture has many input and output layers, depending on its architecture
   override def createNetwork(input: Input, output: Output = None): (Iterable[InputLayer], Iterable[OutputLayer]) = createNetwork(input)
 
   override def createNetwork(input: Input): (Iterable[InputLayer], Iterable[OutputLayer]) = {
     val layers = new Array[Layer](input.nodes.length)
     input.nodes.foreach(n => {
-      val layer = if(n.label!="") new Layer(n) else new Layer(n,layers(n.c1),layers(n.c2))
+      val isRoot = n ==  input.nodes.last
+      val layer = if(n.label!="") new Layer(n,isRoot=isRoot) else Layer(n,layers(n.c1),layers(n.c2),isRoot)
       layers(n.id) = layer
     })
     (layers.withFilter(_.inputLayer != null).map(_.inputLayer),layers.map(_.output))
   }
-
-  override def inputConnections(variable: NNLayer): Iterable[Connection] = variable match {
-    case v:InputLayer => List()
-    case v:Layer =>
-      if(v.inputLayer!=null) Iterable(v.inputConnection,v.biasF)
-      else if(withTensors) Iterable(v.childConnection1,v.childConnection2,v.biasF,v.tensorConnection)
-      else Iterable(v.childConnection1,v.childConnection2,v.biasF)
-    case v:OutputLayer => Iterable(v.connection,v.biasF)
-  }
-
-  override def outputConnections(variable: NNLayer): Iterable[Connection] = variable match {
-    case v:InputLayer => List(v.connection)
-    case v:Layer =>
-      if(v.parentConnection ==null) Iterable(v.outputConnection)
-      else if(withTensors) Iterable(v.parentConnection,v.outputConnection,v.parentTensorConnection)
-      else Iterable(v.parentConnection,v.outputConnection)
-    case v:OutputLayer => Iterable[Connection]()
-  }
 }
 
-class TernarySentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:Boolean = true, activation:ActivationFunction = ActivationFunction.Tanh) extends SentimentRNN(dim,tokenDomain,withTensors, 3,activation) {
+class TernarySentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:Boolean = true, activation:ActivationFunction = ActivationFunction.Tanh)
+  extends SentimentRNN(dim,tokenDomain,withTensors, 3,activation) {
   override def createNetwork(input: Input): (Iterable[InputLayer], Iterable[OutputLayer]) = {
     val layers = new Array[Layer](input.nodes.length)
     input.nodes.foreach(n => {
       if(n.score > 2) n.score = 2
       else if(n.score == 2) n.score = 1
       else if(n.score < 2) n.score = 0
-      val layer = if(n.label!="") new Layer(n) else new Layer(n,layers(n.c1),layers(n.c2))
+      val isRoot = n ==  input.nodes.last
+      val layer = if(n.label!="") new Layer(n,isRoot=isRoot) else Layer(n,layers(n.c1),layers(n.c2),isRoot)
       layers(n.id) = layer
     })
     (layers.withFilter(_.inputLayer != null).map(_.inputLayer),layers.map(_.output))
@@ -160,7 +122,7 @@ object SentimentRNN extends FastLogging {
     //create examples
     def createExamples(trees:Iterable[SentimentPTree]) = {
       trees.map{ t =>
-        val (in,out) =model.createNetwork(t)
+        val (in,out) = model.createNetwork(t)
         new model.BackPropagationExample(in,out,1.0/batchSize)//,rand.nextDouble() >= 0.99) //gradient check at every 100th example, expensive
       }.toList
     }
@@ -187,7 +149,7 @@ object SentimentRNN extends FastLogging {
       })).sum / examples.map(_.size).sum.toDouble
 
       val fineGrainedRoot = examples.count(e => {
-        val r = e.find(_.connection._1.parentConnection == null).get
+        val r = e.find(o => o.inputLayer.isRoot).get
         val t = r.target.value.maxIndex
         val a = r.value.maxIndex
         if(t != zeroLabel) binaryRootTotal+=1

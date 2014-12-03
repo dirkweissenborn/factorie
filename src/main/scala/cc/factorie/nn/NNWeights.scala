@@ -53,7 +53,6 @@ trait NNWeights2[N1<:NNLayer,N2<:NNLayer] extends NNWeights  {
 trait NNWeights3[N1<:NNLayer,N2<:NNLayer,N3<:NNLayer] extends NNWeights  {
   type ConnectionType <: Connection
   type FamilyType <: NNWeights3[N1,N2,N3]
-  def statistics(v1: N1#Value, v2: N2#Value, v3: N3#Value):Tensor
   case class Connection(_1:N1, _2:N2, _3:N3) extends super.Connection
   override val numVariables: Int = 3
   def newConnection(_1:N1,_2:N2,_3:N3) = new Connection(_1,_2,_3)
@@ -83,9 +82,7 @@ trait Bias[N1<:NNLayer] extends NNWeights1[N1] {
     case w: Tensor1 => f._1.objectiveGradient
     case _ => throw new IllegalArgumentException(s"Weights value of ${getClass.getSimpleName} must be of type Tensor2!") //throw objective because this should not be possible
   }
-  override protected def _forwardPropagate(f: FamilyType#ConnectionType): Unit = {
-    f._1.incrementInput(weights.value)
-  }
+  override protected def _forwardPropagate(f: FamilyType#ConnectionType): Unit = f._1.incrementInput(weights.value)
   override protected def _backPropagate(f: FamilyType#ConnectionType): Unit = {}
 }
 //_1 is input and _2 is output of these weights, if these weights are used as NeuralNetworkWeights
@@ -115,15 +112,11 @@ object IdentityWeights extends NNWeights2[NNLayer,NNLayer] {
   override val weights: Weights2 = null //no weights here
   override protected def _outputLayers(f: FamilyType#ConnectionType): Seq[NNLayer] = Seq(f._2)
   override protected def _inputLayers(f: FamilyType#ConnectionType): Seq[NNLayer] = Seq(f._1)
-  override protected def _forwardPropagate(f: FamilyType#ConnectionType): Unit = weights.value match {
-    case weights: Tensor2 => f._2.incrementInput(f._1.value)
-  }
-  override protected def _backPropagateGradient(f: FamilyType#ConnectionType): Tensor2 = weights.value match {
-    case w: Tensor2 =>
+  override protected def _forwardPropagate(f: FamilyType#ConnectionType): Unit = f._2.incrementInput(f._1.value)
+  override protected def _backPropagateGradient(f: FamilyType#ConnectionType): Tensor2 = {
       val outGradient = f._2.objectiveGradient
       f._1.incrementObjectiveGradient(outGradient)
       null //Hack, just return an empty tensor because we do not want to update these weights
-    case _ => throw new IllegalArgumentException(s"Weights value of ${getClass.getSimpleName} must be of type Tensor2!") //throw objective because this should not be possible
   }
 
   override protected def _backPropagate(f: FamilyType#ConnectionType): Unit = {}
@@ -136,9 +129,6 @@ trait NeuralTensorWeights[N1<:NNLayer,N2<:NNLayer,N3<:NNLayer] extends NNWeights
   override def weights: Weights3
   override protected def _outputLayers(f: FamilyType#ConnectionType): Seq[NNLayer] = Seq(f._3)
   override protected def _inputLayers(f: FamilyType#ConnectionType): Seq[NNLayer] = Seq(f._1, f._2)
-  override def statistics(v1: Tensor1, v2: Tensor1, v3: Tensor1): Tensor = {
-    v1 outer v2 outer v3
-  }
   override protected def _forwardPropagate(f: FamilyType#ConnectionType): Unit = weights.value match {
     case w:FixedLayers1DenseTensor3 =>
       val input = NNUtils.fillDense(f._3.value.length)(k => (w.matrices(k) * f._2.value) dot f._1.value)
@@ -156,7 +146,7 @@ trait NeuralTensorWeights[N1<:NNLayer,N2<:NNLayer,N3<:NNLayer] extends NNWeights
       f._3.incrementInput(input)
   }
   override protected def _backPropagateGradient(f: FamilyType#ConnectionType): Tensor = weights.value match {
-    case w:FixedLayers1DenseTensor3 =>
+    case w:FixedLayers1DenseTensor3 => //more efficient because Tensor3 is viewed as a seq of matrices
       val outerProd = f._1.value outer f._2.value
       val outGradient = f._3.objectiveGradient
       val weightGradient = new FixedLayers1DenseTensor3(
@@ -196,10 +186,6 @@ trait ConcatenatedNeuralTensorWeights[N1<:NNLayer,N2<:NNLayer,N3<:NNLayer] exten
   override def weights: Weights3
   override protected def _outputLayers(f: FamilyType#ConnectionType): Seq[NNLayer] = Seq(f._3)
   override protected def _inputLayers(f: FamilyType#ConnectionType): Seq[NNLayer] = Seq(f._1, f._2)
-  override def statistics(v1: Tensor1, v2: Tensor1, v3: Tensor1): Tensor = {
-    val concatVector = NNUtils.concatenateTensor1(v1, v2)
-    concatVector outer concatVector outer v3
-  }
   override protected def _forwardPropagate(f: FamilyType#ConnectionType): Unit = weights.value match {
     case w:FixedLayers1DenseTensor3 =>
       val concatVector = NNUtils.concatenateTensor1(f._1.value, f._2.value)
