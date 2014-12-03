@@ -1,6 +1,6 @@
 package cc.factorie.nn
 
-import cc.factorie.la.{WeightsMapAccumulator, Tensor1}
+import cc.factorie.la.{LocalWeightsMapAccumulator, WeightsMapAccumulator, Tensor1}
 import cc.factorie.model._
 import cc.factorie.optimize.{Example, MultivariateOptimizableObjective}
 import cc.factorie.optimize.OptimizableObjectives.SquaredMultivariate
@@ -57,17 +57,7 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
 
   protected def _backPropagateOutputGradient(orderedConnections: OrderedConnections): WeightsMap = {
     val map = new WeightsMap(key => key.value.blankCopy)
-    orderedConnections.foreach(_._2.withFilter(!_.isInstanceOf[OutputNNLayer]).foreach(_.zeroObjectiveGradient()))
-    val gradients = orderedConnections.reverseIterator.flatMap(cs => {
-      //multiply accumulated gradient with derivative of activation
-      cs._2.foreach(_.updateObjectiveGradient())
-      //backpropagate gradient
-      val e = cs._1.flatMap(f => {val grad = f.backPropagateGradient; if(grad != null) Some(f.family.weights -> grad) else None})
-      e
-    })
-    gradients.foreach{
-      case (weights,gradient) => map(weights) += gradient
-    }
+    _backPropagateOutputGradient(orderedConnections, new LocalWeightsMapAccumulator(map))
     map
   }
 
@@ -77,7 +67,7 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
       //multiply accumulated gradient with derivative of activation
       cs._2.foreach(_.updateObjectiveGradient())
       //backpropagate gradient
-      val e = cs._1.map(f => f.family.weights -> f.backPropagateGradient)
+      val e = cs._1.flatMap(f => {val grad = f.backPropagateGradient; if(grad != null) Some(f.family.weights -> grad) else None})
       e
     })
     gradients.foreach {
