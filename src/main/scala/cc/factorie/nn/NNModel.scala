@@ -86,34 +86,34 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
   //computes the DAG starting from the input layers and returns a seq of independent factors and layers which inputs comes only from factors up to this point
   //Override this if there is a more efficient way of computing this (e.g.: see BasicFeedForwardNeuralNetwork)
   def calculateComputationSeq(inputLayers:Iterable[InputLayer]): OrderedConnections = {
-    var currentLayers = mutable.HashSet[NNLayer]() ++= inputLayers
+    var currentLayers:Iterable[NNLayer] = inputLayers
     val connectionSeq = ArrayBuffer[(ArrayBuffer[Connection],Iterable[NNLayer])]()
 
-    val updatedInputLayers = mutable.Map[Connection,(Int,Int)]()  //connection -> (#currently activated input layers,#total inputs), if both are equal the connection can be activated
-    val updatedInputConnections = mutable.Map[NNLayer,(Int,Int)]() //layer -> (#currently activated input connections,#total inputs), if both are equal the layer can be activated
+    val updatedInputConnections = mutable.Map[Connection,(Int,Int)]()  //connection -> (#currently activated input layers,#total inputs), if both are equal the connection can be activated
+    val updatedInputLayers = mutable.Map[NNLayer,(Int,Int)]() //layer -> (#currently activated input connections,#total inputs), if both are equal the layer can be activated
 
     while(currentLayers.nonEmpty) {
       val nextConnections = ArrayBuffer[Connection]()
-      val nextLayers = mutable.HashSet[NNLayer]()
-      currentLayers.foreach(l => outputConnections(l).foreach(f => {
-        val outLayers = f.outputLayers
-        val (nrInputs,totalNrInputs) = updatedInputLayers.getOrElseUpdate(f,(0,f.inputLayers.size))
+      val nextLayers = mutable.ArrayBuffer[NNLayer]()
+      currentLayers.foreach(l => outputConnections(l).foreach(c => {
+        val outLayers = c.outputLayers
+        val (nrInputs,totalNrInputs) = updatedInputConnections.getOrElse(c,(0,c.inputLayers.size))
         if (nrInputs == totalNrInputs - 1) {
-          nextConnections += f
+          nextConnections += c
           //update number of incoming activated connections for each output layer of this connection; if full, add it to nextConnections
           outLayers.foreach(l => {
             val (ct,totalCt) =
-              updatedInputConnections.getOrElseUpdate(l, {
+              updatedInputLayers.getOrElse(l, {
                 val inConnections = inputConnections(l)
                 (inConnections.count(_.numVariables == 1),inConnections.size)
               }) //initialize with number of biases
             if(ct == totalCt - 1) //this layer got full input, add it as next layer
               nextLayers += l
             else //update activated connections count for this layer
-              updatedInputConnections += l -> (ct+1,totalCt)
+              updatedInputLayers += l -> (ct+1,totalCt)
           } )
         } else //update activated input layers count for this connection
-          updatedInputLayers(f) = (nrInputs+1,totalNrInputs)
+          updatedInputConnections(c) = (nrInputs+1,totalNrInputs)
       }))
       currentLayers = nextLayers
 

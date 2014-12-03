@@ -21,11 +21,11 @@ trait ActivationFunction {
   def typ: String
 }
 
-case class DropOutActivation(activation:ActivationFunction) extends BaseActivationFunction {
+case class DropOutActivation(activation:ActivationFunction,percentage:Double)(implicit rng:Random) extends BaseActivationFunction {
   def apply(l: NNLayer): Unit = {
     val input = l.input
     activation.apply(l)
-    l.value.foreachActiveElement((i,v) => if(Random.nextBoolean()) {l.value.update(i, 0.0); input.update(i,0.0)})
+    l.value.foreachActiveElement((i,v) => if(rng.nextDouble() < percentage) {l.value.update(i, 0.0); input.update(i,0.0)})
   }
   override def inputDerivative(l: NNLayer): Tensor1 = {
     val t = activation.inputDerivative(l)
