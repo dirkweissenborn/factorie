@@ -29,7 +29,7 @@ trait NNLayer extends MutableTensorVar {
       value.foreachActiveElement((j,softmax_j) => {
         _objectiveGradient.update(j,softmax_j*(_objectiveGradient(j)-sum))
       })
-    } else _objectiveGradient *= activationFunction.applyDerivative(input)
+    } else _objectiveGradient *= activationFunction.inputDerivative(this)
   }
   protected[nn] var inConnections = List[NNWeights#Connection]()
   protected[nn] var outConnections = List[NNWeights#Connection]()
@@ -80,7 +80,7 @@ class BasicNNLayer(t:Tensor1, override val activationFunction:ActivationFunction
     _objectiveGradient += in
   def updateActivation() = {
     value := _input
-    activationFunction(value)
+    activationFunction(this)
     value
   }
 }

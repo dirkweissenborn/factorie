@@ -15,17 +15,22 @@ import scala.util.Random
  *
  */
 trait ActivationFunction {
-  def apply(v:Tensor1):Unit
+  def apply(l:NNLayer):Unit
   //transformations directly on input
-  def applyDerivative(input: Tensor1): Tensor1
+  def inputDerivative(l: NNLayer): Tensor1
   def typ: String
 }
 
-//Mixin for dropout training
-trait DropOutActivation extends ActivationFunction {
-  abstract override def apply(v1: Tensor1): Unit = {
-    super.apply(v1)
-    v1.foreachActiveElement((i,v) => if(Random.nextBoolean())v1.+=(i,-v))
+case class DropOutActivation(activation:ActivationFunction) extends BaseActivationFunction {
+  def apply(l: NNLayer): Unit = {
+    val input = l.input
+    activation.apply(l)
+    l.value.foreachActiveElement((i,v) => if(Random.nextBoolean()) {l.value.update(i, 0.0); input.update(i,0.0)})
+  }
+  override def inputDerivative(l: NNLayer): Tensor1 = {
+    val t = activation.inputDerivative(l)
+    l.value.foreachActiveElement((i,v) => if(v == 0.0) t update (i, 0.0))
+    t
   }
 }
 
@@ -37,19 +42,15 @@ trait BaseActivationFunction extends ActivationFunction {
   override def equals(o: Any): Boolean = {
     o.getClass.getName == typ
   }
-  override def toString: String = {
-    typ
-  }
+  override def toString: String = typ
 }
 
 object ActivationFunction {
   object Exp extends BaseActivationFunction {
-    def apply(input: Tensor1) = stabilizeInput(input, 1).exponentiate()
+    def apply(l: NNLayer) = stabilizeInput(l.value, 1).exponentiate()
 
-    def applyDerivative(input: Tensor1): Tensor1 = {
-      val c = input.copy
-      apply(c)
-      c
+    def inputDerivative(l: NNLayer): Tensor1 = {
+      val c = l.input.copy; stabilizeInput(c, 1).exponentiate(); c
     }
 
     /**
@@ -74,13 +75,13 @@ object ActivationFunction {
   }
 
   object HardTanh extends BaseActivationFunction {
-    def apply(input: Tensor1) = input.foreachActiveElement { case (i, value) =>
-      if(value > 1) input.update(i, 1.0)
-      else if(value < -1) input.update(i, -1.0)
-        else input.update(i, cc.factorie.maths.tanh(value))
+    def apply(l: NNLayer) = l.value.foreachActiveElement { case (i, value) =>
+      if(value > 1) l.value.update(i, 1.0)
+      else if(value < -1) l.value.update(i, -1.0)
+        else l.value.update(i, cc.factorie.maths.tanh(value))
     }
-    def applyDerivative(input: Tensor1): Tensor1 = {
-      val derivative = input.copy
+    def inputDerivative(l: NNLayer): Tensor1 = {
+      val derivative = l.input.copy
       derivative.foreachActiveElement { case (i, value) =>
         if (value < -1) derivative.update(i, -1)
         else if (value > 1) derivative.update(i, 1)
@@ -91,19 +92,19 @@ object ActivationFunction {
   }
 
   object Linear extends BaseActivationFunction {
-    def apply(input: Tensor1) = {}
-    def applyDerivative(input: Tensor1): Tensor1 = new UniformTensor1(input.length, 1.0)
+    def apply(l: NNLayer) = {}
+    def inputDerivative(l: NNLayer): Tensor1 = new UniformTensor1(l.input.length, 1.0)
   }
 
   object RectifiedLinear extends BaseActivationFunction {
-    def apply(input: Tensor1) = input.foreachActiveElement { case (i, value) => input.update(i, math.max(0.0, value))}
-    def applyDerivative(input: Tensor1): Tensor1 = new UniformTensor1(input.length, 1.0)
+    def apply(l: NNLayer) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, math.max(0.0, value))}
+    def inputDerivative(l: NNLayer): Tensor1 = new UniformTensor1(l.input.length, 1.0)
   }
 
   object Sigmoid extends BaseActivationFunction {
-    def apply(input: Tensor1) = input.foreachActiveElement { case (i, value) => input.update(i, cc.factorie.maths.sigmoid(value))}
-    def applyDerivative(input: Tensor1): Tensor1 = {
-      val derivative = input.copy
+    def apply(l: NNLayer) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, cc.factorie.maths.sigmoid(value))}
+    def inputDerivative(l: NNLayer): Tensor1 = {
+      val derivative = l.input.copy
       derivative.foreachActiveElement { case (i, value) =>
         val s = cc.factorie.maths.sigmoid(value)
         derivative.update(i, s * (1.0 - s))
@@ -113,16 +114,16 @@ object ActivationFunction {
   }
 
   object SoftMax extends BaseActivationFunction {
-    def apply(input: Tensor1) = input.expNormalize()
-    def applyDerivative(input: Tensor1): Tensor1 = {
+    def apply(l: NNLayer) = l.value.expNormalize()
+    def inputDerivative(l: NNLayer): Tensor1 = {
       throw new NotImplementedError("There is no direct calculation of of the Softmax derivative for each unit in separate")
     }
   }
 
   object Tanh extends BaseActivationFunction {
-    def apply(input: Tensor1) = input.foreachActiveElement { case (i, value) => input.update(i, cc.factorie.maths.tanh(value))}
-    def applyDerivative(input: Tensor1): Tensor1 = {
-      val derivative = input.copy
+    def apply(l: NNLayer) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, cc.factorie.maths.tanh(value))}
+    def inputDerivative(l: NNLayer): Tensor1 = {
+      val derivative = l.input.copy
       derivative.foreachActiveElement { case (i, value) => derivative.update(i, 1 - math.pow(Math.tanh(value), 2)) }
       derivative
     }
