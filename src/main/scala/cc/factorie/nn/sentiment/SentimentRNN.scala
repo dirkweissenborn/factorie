@@ -71,22 +71,22 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
 
   //Now define how to create a network given the input
   //creates network input and corresponding output. It is possible that the network architecture has many input and output layers, depending on its architecture
-  override def createNetwork(input: Input, output: Output = None): (Iterable[InputLayer], Iterable[OutputLayer]) = createNetwork(input)
+  override def createNetwork(input: Input, output: Output = None) = createNetwork(input)
 
-  override def createNetwork(input: Input): (Iterable[InputLayer], Iterable[OutputLayer]) = {
+  override def createNetwork(input: Input) = {
     val layers = new Array[Layer](input.nodes.length)
     input.nodes.foreach(n => {
       val isRoot = n ==  input.nodes.last
       val layer = if(n.label!="") new Layer(n,isRoot=isRoot) else Layer(n,layers(n.c1),layers(n.c2),isRoot)
       layers(n.id) = layer
     })
-    (layers.withFilter(_.inputLayer != null).map(_.inputLayer),layers.map(_.output))
+    new Network(layers.withFilter(_.inputLayer != null).map(_.inputLayer),layers.map(_.output))
   }
 }
 
 class TernarySentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:Boolean = true, activation:ActivationFunction = ActivationFunction.Tanh)
   extends SentimentRNN(dim,tokenDomain,withTensors, 3,activation) {
-  override def createNetwork(input: Input): (Iterable[InputLayer], Iterable[OutputLayer]) = {
+  override def createNetwork(input: Input) = {
     val layers = new Array[Layer](input.nodes.length)
     input.nodes.foreach(n => {
       if(n.score > 2) n.score = 2
@@ -96,7 +96,7 @@ class TernarySentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTe
       val layer = if(n.label!="") new Layer(n,isRoot=isRoot) else Layer(n,layers(n.c1),layers(n.c2),isRoot)
       layers(n.id) = layer
     })
-    (layers.withFilter(_.inputLayer != null).map(_.inputLayer),layers.map(_.output))
+    new Network(layers.withFilter(_.inputLayer != null).map(_.inputLayer),layers.map(_.output))
   }
 }
 
@@ -122,8 +122,8 @@ object SentimentRNN extends FastLogging {
     //create examples
     def createExamples(trees:Iterable[SentimentPTree]) = {
       trees.map{ t =>
-        val (in,out) = model.createNetwork(t)
-        new model.BackPropagationExample(in,out,1.0/batchSize)//,rand.nextDouble() >= 0.99) //gradient check at every 100th example, expensive
+        val net = model.createNetwork(t)
+        new model.BackPropagationExample(net,1.0/batchSize)//,rand.nextDouble() >= 0.99) //gradient check at every 100th example, expensive
       }.toList
     }
     val trainExamples = createExamples(trainTrees)
@@ -131,25 +131,25 @@ object SentimentRNN extends FastLogging {
     val devExamples = devTrees.map(t => model.createNetwork(t)).toSeq
 
     val zeroLabel = model.numLabels/2
-    def printEvaluation(examples:Seq[Iterable[model.OutputLayer]], name:String) {
-      val size = examples.size.toDouble
-      val objective = examples.map(e => model.totalObjective(e)).sum / size
+    def printEvaluation(examples:Seq[model.Network], name:String) {
+      val size = examples.view.map(_.outputLayers.size).sum.toDouble
+      val objective = examples.view.map(e => e.totalObjective).sum / size
       var binaryAll = 0.0
       var binaryAllTotal = 0.0
       var binaryRoot = 0.0
       var binaryRootTotal = 0.0
 
-      val fineGrainedAll = examples.map(_.count(e => {
-        val t = e.target.value.maxIndex
-        val a = e.value.maxIndex
+      val fineGrainedAll = examples.view.map(_.outputLayers.count(o => {
+        val t = o.target.value.maxIndex
+        val a = o.value.maxIndex
         if(t != zeroLabel) binaryAllTotal+=1
         if(t > zeroLabel && a > zeroLabel) binaryAll += 1
         if(t < zeroLabel && a < zeroLabel) binaryAll += 1
         t == a
-      })).sum / examples.map(_.size).sum.toDouble
+      })).sum / examples.map(_.outputLayers.size).sum.toDouble
 
       val fineGrainedRoot = examples.count(e => {
-        val r = e.find(o => o.inputLayer.isRoot).get
+        val r = e.outputLayers.find(o => o.inputLayer.isRoot).get
         val t = r.target.value.maxIndex
         val a = r.value.maxIndex
         if(t != zeroLabel) binaryRootTotal+=1
@@ -180,13 +180,13 @@ object SentimentRNN extends FastLogging {
         optimizer = new AdaGrad(rate = 0.01,delta = 0.001) with L2Regularization { variance = 1000.0 }) //Adagrad with L2-regularization
 
       Random.shuffle(trainExamples).grouped(batchSize).foreach(e => trainer.processExamples(e))
-      printEvaluation(trainExamples.map(_.outputLayers),"Train")
+      printEvaluation(trainExamples.map(_.network),"Train")
 
-      devExamples.foreach(e => model.forwardPropagateInput(e._1))
-      printEvaluation(devExamples.map(_._2),"Dev")
+      devExamples.foreach(_.forwardPropagateInput())
+      printEvaluation(devExamples,"Dev")
 
-      testExamples.foreach(e => model.forwardPropagateInput(e._1))
-      printEvaluation(testExamples.map(_._2),"Test")
+      testExamples.foreach(_.forwardPropagateInput())
+      printEvaluation(testExamples,"Test")
     }
   }
 

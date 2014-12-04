@@ -27,25 +27,25 @@ class TestFeedForwardNeuralNetwork extends FlatSpec {
 
   "Gradient checks" should "not fail for a basic feed forward neural network" in {
     val model = new BasicFeedForwardNN(Array((2,ActivationFunction.Tanh),(10,ActivationFunction.Sigmoid),(1,ActivationFunction.Sigmoid)))
-    val pairs = Seq(
+    val nets = Seq(
       model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => 1.0)),
       model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => -1.0)),
       model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => -1.0)),
       model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => 1.0)))
 
-    val examples = pairs.map(l => new model.BackPropagationExample(l._1,l._2))
+    val examples = nets.map(net => new model.BackPropagationExample(net))
     assert(examples.forall(_.checkGradient()))
   }
   it should "not fail on a simple sentiment RNN either" in {
     val sentiModel = new SentimentRNN(10,tokenDomain,withTensors = false)
-    val (in,out) = sentiModel.createNetwork(pt)
-    val example = new sentiModel.BackPropagationExample(in,out)
+    val net = sentiModel.createNetwork(pt)
+    val example = new sentiModel.BackPropagationExample(net)
     assert(example.checkGradient())
   }
   it should "not fail on a sentiment tensor RNN either" in {
     val sentiModel2 = new SentimentRNN(2, tokenDomain)
-    val (in, out) = sentiModel2.createNetwork(pt)
-    val example = new sentiModel2.BackPropagationExample(in, out)
+    val net = sentiModel2.createNetwork(pt)
+    val example = new sentiModel2.BackPropagationExample(net)
     assert(example.checkGradient())
 
     /*NNUtils.setTensorImplementation(NNUtils.JBLAS)
@@ -68,15 +68,15 @@ class TestFeedForwardNeuralNetwork extends FlatSpec {
   it should "not fail on a simple sentiment RNN with JBLAS either" in {
     NNUtils.setTensorImplementation(NNUtils.JBLAS)
     val sentiModel = new SentimentRNN(10,tokenDomain,withTensors = false)
-    val (in,out) = sentiModel.createNetwork(pt)
-    val example = new sentiModel.BackPropagationExample(in,out)
+    val network = sentiModel.createNetwork(pt)
+    val example = new sentiModel.BackPropagationExample(network)
     //assert(example.checkGradient())
   }
   it should "not fail on a sentiment tensor RNN with JBLAS either" in {
     NNUtils.setTensorImplementation(NNUtils.JBLAS)
     val sentiModel = new SentimentRNN(2,tokenDomain)
-    val (in,out) = sentiModel.createNetwork(pt)
-    val example = new sentiModel.BackPropagationExample(in,out)
+    val network = sentiModel.createNetwork(pt)
+    val example = new sentiModel.BackPropagationExample(network)
     assert(example.checkGradient())
   }
 

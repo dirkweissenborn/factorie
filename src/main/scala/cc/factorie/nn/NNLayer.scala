@@ -48,7 +48,7 @@ trait LabeledNNLayer extends NNLayer with LabeledMutableVar with OutputNNLayer {
 
   //should get updated when error is called on such a Layer, used for calculating objective through the error function
   override def objectiveGradient = {
-    val (v,gradient) = objectiveFunction.valueAndGradient(value.copy,target.value)
+    val (v,gradient) = objectiveFunction.valueAndGradient(value,target.value)
     setLastObjective(v)
     updateObjectiveGradient(gradient)
     gradient

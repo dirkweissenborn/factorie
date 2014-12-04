@@ -129,5 +129,13 @@ object ActivationFunction {
     }
   }
 
+  object Squared extends BaseActivationFunction {
+    def apply(l: NNLayer) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, value * value)}
+    def inputDerivative(l: NNLayer): Tensor1 = {
+      val derivative = l.input.copy
+      derivative *= 2.0
+      derivative
+    }
+  }
 }
 
