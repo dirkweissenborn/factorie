@@ -92,11 +92,11 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
     //returns gradient on the error function for all weights of this model
     def backPropagateOutputGradient:WeightsMap= {
       val map = new WeightsMap(key => key.value.blankCopy)
-      _backPropagateOutputGradient(new LocalWeightsMapAccumulator(map))
+      backPropagateOutputGradient(new LocalWeightsMapAccumulator(map))
       map
     }
 
-    protected[FeedForwardNNModel] def _backPropagateOutputGradient(accumulator:WeightsMapAccumulator,scale:Double=1.0) = {
+    def backPropagateOutputGradient(accumulator:WeightsMapAccumulator,scale:Double=1.0) = {
       computationSeq.foreach(_._2.withFilter(!_.isInstanceOf[OutputLayer]).foreach(_.zeroObjectiveGradient()))
       val gradients = computationSeq.reverseIterator.flatMap(cs => {
         //multiply accumulated gradient with derivative of activation
@@ -142,7 +142,7 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
   class BackPropagationExample(val network:Network, val scale:Double = 1.0) extends Example {
     override def accumulateValueAndGradient(value: DoubleAccumulator, gradient: WeightsMapAccumulator): Unit = {
       network.forwardPropagateInput()
-      network._backPropagateOutputGradient(gradient,scale)
+      network.backPropagateOutputGradient(gradient,scale)
       if(value != null)
         value.accumulate(network.outputLayers.foldLeft(0.0)(_ + _.lastObjective) * scale)
     }
