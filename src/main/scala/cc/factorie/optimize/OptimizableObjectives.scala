@@ -39,15 +39,20 @@ object OptimizableObjectives {
 
   class HingeMulticlass extends MultivariateOptimizableObjective[Int] {
     def valueAndGradient(prediction: Tensor1, label: Int): (Double, Tensor1) = {
-      val lossAugmented = { val c = prediction.copy; c -= (label, 1.0); c }
-      val maxLabel = lossAugmented.maxIndex
+      val labelValue = prediction(label) -1.0
+      var maxLabel = label
+      var max = labelValue
+      prediction.foreachActiveElement((i,v) => if(i != label && v > max) {
+        maxLabel = i
+        max = v
+      })
       if (maxLabel == label)
         (0.0, new SparseIndexedTensor1(prediction.size))
       else {
         val grad = new SparseIndexedTensor1(prediction.size)
         grad(label) += 1.0
         grad(maxLabel) -= 1.0
-        val value = lossAugmented(label) - lossAugmented(maxLabel)
+        val value = labelValue - max
         (value, grad)
       }
     }
@@ -55,12 +60,17 @@ object OptimizableObjectives {
 
   class HingeSqMulticlass extends MultivariateOptimizableObjective[Int] {
     def valueAndGradient(prediction: Tensor1, label: Int): (Double, Tensor1) = {
-      val lossAugmented = { val c = prediction.copy; c -= (label, 1.0); c }
-      val maxLabel = lossAugmented.maxIndex
+      val labelValue = prediction(label) -1.0
+      var maxLabel = label
+      var max = labelValue
+      prediction.foreachActiveElement((i,v) => if(i != label && v > max) {
+        maxLabel = i
+        max = v
+      })
       if (maxLabel == label)
         (0.0, new SparseIndexedTensor1(prediction.size))
       else {
-        val violation = lossAugmented(label) - lossAugmented(maxLabel)
+        val violation = labelValue - max
         val grad = new SparseIndexedTensor1(prediction.size)
         grad(label) += 2 * -violation
         grad(maxLabel) += 2 * violation
