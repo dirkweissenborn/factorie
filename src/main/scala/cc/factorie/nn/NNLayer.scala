@@ -43,20 +43,29 @@ trait OutputNNLayer extends NNLayer {
   def setLastObjective(obj: Double):Unit
 }
 
-trait LabeledNNLayer extends NNLayer with LabeledMutableVar with OutputNNLayer {
+trait LabeledNNLayer extends OutputNNLayer with LabeledMutableVar  {
   override type TargetType = TargetNNLayer
-
-  //should get updated when error is called on such a Layer, used for calculating objective through the error function
+  protected val _objectiveGradient: Tensor1
+  private var _valueChanged:Boolean = true
+  //should get updated when objectiveGradient is called on such a Layer, used for calculating objective through the error function
   override def objectiveGradient = {
-    val (v,gradient) = objectiveFunction.valueAndGradient(value,target.value)
-    setLastObjective(v)
-    updateObjectiveGradient(gradient)
-    gradient
+    if(_valueChanged) {
+      val (v,gradient) = objectiveFunction.valueAndGradient(value,target.value)
+      setLastObjective(v)
+      updateObjectiveGradient(gradient)
+      _objectiveGradient := gradient
+      _valueChanged = false
+    }
+    _objectiveGradient
+  }
+  final abstract override def updateActivation(): Unit = {
+    super.updateActivation()
+    _valueChanged = true
   }
 
   //only needed for hidden units after accumulating their error from parent connections
   final override def updateObjectiveGradient(): Unit = {}
-  final override def zeroObjectiveGradient(): Unit = {}
+  final override def zeroObjectiveGradient(): Unit = { _valueChanged = true }
 }
 
 trait TargetNNLayer extends MutableTensorVar with TargetVar {
@@ -76,7 +85,7 @@ class BasicNNLayer(t:Tensor1, override val activationFunction:ActivationFunction
   def input = _input
   def incrementInput(in:Tensor1) =
     _input += in
-  def incrementObjectiveGradient(in:Tensor1) =
+  def incrementObjectiveGradient(in:Tensor1):Unit =
     _objectiveGradient += in
   def updateActivation() = {
     value := _input
@@ -100,7 +109,7 @@ trait InputNNLayer extends NNLayer {
 class BasicOutputNNLayer(initialValue:Tensor1,
                         activationFunction:ActivationFunction = ActivationFunction.SoftMax,
                         override val objectiveFunction:MultivariateOptimizableObjective[Tensor1] = new SquaredMultivariate) extends BasicNNLayer(initialValue,activationFunction) with OutputNNLayer {
-  override def incrementObjectiveGradient(in:Tensor1) = throw new IllegalAccessException("You cannot increment the error of an output layer, it is calculated from its target")
+  override def incrementObjectiveGradient(in:Tensor1):Unit = throw new IllegalAccessException("You cannot increment the error of an output layer, it is calculated from its target")
   protected var _lastObjective:Double = 0.0
   override def lastObjective: Double = _lastObjective
   override def setLastObjective(obj: Double): Unit = _lastObjective = obj

@@ -2,7 +2,7 @@ package cc.factorie.nn
 
 import java.util
 
-import cc.factorie.la.{LocalWeightsMapAccumulator, WeightsMapAccumulator, Tensor1}
+import cc.factorie.la.{Tensor, LocalWeightsMapAccumulator, WeightsMapAccumulator, Tensor1}
 import cc.factorie.model._
 import cc.factorie.optimize.{Example, MultivariateOptimizableObjective}
 import cc.factorie.optimize.OptimizableObjectives.SquaredMultivariate
@@ -97,18 +97,22 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
     }
 
     def backPropagateOutputGradient(accumulator:WeightsMapAccumulator,scale:Double=1.0) = {
-      computationSeq.foreach(_._2.withFilter(!_.isInstanceOf[OutputLayer]).foreach(_.zeroObjectiveGradient()))
-      val gradients = computationSeq.reverseIterator.flatMap(cs => {
-        //multiply accumulated gradient with derivative of activation
-        cs._2.foreach(_.updateObjectiveGradient())
-        //backpropagate gradient
-        val e = cs._1.flatMap(f => {val grad = f.backPropagateGradient; if(grad != null) Some(f.family.weights -> grad) else None})
-        e
-      })
-      gradients.foreach {
-        case (weights,gradient) =>
-          if(scale ==1.0) accumulator.accumulate(weights, gradient,scale)
-          else accumulator.accumulate(weights, gradient)
+      computationSeq.foreach(_._2.foreach(_.zeroObjectiveGradient()))
+      if(outputLayers.exists(l => !l.objectiveGradient.forallActiveElements((_,v) => v == 0.0))) {
+        val gradients = computationSeq.reverseIterator.flatMap(cs => {
+          //multiply accumulated gradient with derivative of activation
+          cs._2.foreach(_.updateObjectiveGradient())
+          //backpropagate gradient
+          val e = cs._1.flatMap(c => {
+            val grad = c.backPropagateGradient; if (grad != null) Some(c.family.weights -> grad) else None
+          })
+          e
+        })
+        gradients.foreach {
+          case (weights, gradient) =>
+            if (scale == 1.0) accumulator.accumulate(weights, gradient, scale)
+            else accumulator.accumulate(weights, gradient)
+        }
       }
     }
 
@@ -165,9 +169,11 @@ trait FeedForwardNNModel extends NNModel with FastLogging {
             val v = w.value(i)
             w.value.update(i, v + epsilon)
             network.forwardPropagateInput()
+            network.outputLayers.foreach(_.zeroObjectiveGradient())
             val e1 = network.totalObjective
             w.value.update(i, v - epsilon)
             network.forwardPropagateInput()
+            network.outputLayers.foreach(_.zeroObjectiveGradient())
             val e2 = network.totalObjective
             val appDeriv: Double = (e1 - e2) / (2 * epsilon)
             val diff = math.abs(appDeriv - calcDeriv)

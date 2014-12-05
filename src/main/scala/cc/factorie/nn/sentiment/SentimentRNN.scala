@@ -18,9 +18,11 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
   // #### First define layers of this network, input and output ####
   override type Output = Any //included in input
   override type Input = SentimentPTree
-  case class OutputLayer(label:Int, inputLayer:Layer) extends BasicOutputNNLayer({val t = NNUtils.newDense(numLabels);t.+=(label,1.0);t}) with LabeledNNLayer {
+  var objectiveF = labelToTensorObjective(OptimizableObjectives.hingeMulticlass)
+
+  case class OutputLayer(label:Int, inputLayer:Layer) extends BasicOutputNNLayer({val t = NNUtils.newDense(numLabels);t.+=(label,1.0);t},objectiveFunction = objectiveF) with LabeledNNLayer {
     override def toString: String = s"Sentiment: $label"
-    override val target = new BasicTargetNNLayer(value.copy, this)
+    override val target = new BasicTargetNNLayer(new SingletonTensor1(numLabels,label,1.0), this)
     newConnection(outBias,this)
   }
   case class InputLayer(token:String) extends OneHotNNLayer(new SingletonBinaryTensor1(tokenDomain.size, tokenDomain.index(token))) {
@@ -146,7 +148,7 @@ object SentimentRNN extends FastLogging {
         if(t > zeroLabel && a > zeroLabel) binaryAll += 1
         if(t < zeroLabel && a < zeroLabel) binaryAll += 1
         t == a
-      })).sum / examples.map(_.outputLayers.size).sum.toDouble
+      })).sum / size
 
       val fineGrainedRoot = examples.count(e => {
         val r = e.outputLayers.find(o => o.inputLayer.isRoot).get
@@ -156,7 +158,7 @@ object SentimentRNN extends FastLogging {
         if(t > zeroLabel && a > zeroLabel) binaryRoot += 1
         if(t < zeroLabel && a < zeroLabel) binaryRoot += 1
         t == a
-      }) / size
+      }) / examples.size.toDouble
       logger.info(
         s"""####### Evaluation $name #############
            |Avg. objective: $objective

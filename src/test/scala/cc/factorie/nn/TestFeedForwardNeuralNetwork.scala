@@ -2,6 +2,7 @@ package cc.factorie.nn
 
 import cc.factorie.la.DenseTensor1
 import cc.factorie.nn.sentiment.{LoadPTB, SentimentRNN}
+import cc.factorie.optimize.OptimizableObjectives
 import cc.factorie.variable.CategoricalDomain
 import org.junit.runner.RunWith
 import org.scalatest._
@@ -38,12 +39,14 @@ class TestFeedForwardNeuralNetwork extends FlatSpec {
   }
   it should "not fail on a simple sentiment RNN either" in {
     val sentiModel = new SentimentRNN(10,tokenDomain,withTensors = false)
+    sentiModel.objectiveF = OptimizableObjectives.squaredMultivariate
     val net = sentiModel.createNetwork(pt)
     val example = new sentiModel.BackPropagationExample(net)
     assert(example.checkGradient())
   }
   it should "not fail on a sentiment tensor RNN either" in {
     val sentiModel2 = new SentimentRNN(2, tokenDomain)
+    sentiModel2.objectiveF = OptimizableObjectives.squaredMultivariate
     val net = sentiModel2.createNetwork(pt)
     val example = new sentiModel2.BackPropagationExample(net)
     assert(example.checkGradient())
@@ -68,6 +71,7 @@ class TestFeedForwardNeuralNetwork extends FlatSpec {
   it should "not fail on a simple sentiment RNN with JBLAS either" in {
     NNUtils.setTensorImplementation(NNUtils.JBLAS)
     val sentiModel = new SentimentRNN(10,tokenDomain,withTensors = false)
+    sentiModel.objectiveF = OptimizableObjectives.squaredMultivariate
     val network = sentiModel.createNetwork(pt)
     val example = new sentiModel.BackPropagationExample(network)
     //assert(example.checkGradient())
@@ -75,6 +79,7 @@ class TestFeedForwardNeuralNetwork extends FlatSpec {
   it should "not fail on a sentiment tensor RNN with JBLAS either" in {
     NNUtils.setTensorImplementation(NNUtils.JBLAS)
     val sentiModel = new SentimentRNN(2,tokenDomain)
+    sentiModel.objectiveF = OptimizableObjectives.squaredMultivariate
     val network = sentiModel.createNetwork(pt)
     val example = new sentiModel.BackPropagationExample(network)
     assert(example.checkGradient())
