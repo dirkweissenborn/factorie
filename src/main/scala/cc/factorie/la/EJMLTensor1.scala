@@ -5,38 +5,40 @@ import org.ejml.alg.dense.mult.VectorVectorMult
 import org.ejml.ops.{NormOps, CommonOps}
 import org.ejml.simple.SimpleMatrix
 
-/**
- * Created by diwe01 on 01.08.14.
- */
-trait EJMLTensor extends Tensor with DenseDoubleSeq {
-  val matrix:SimpleMatrix
-  override def update(i: Int, v: Double): Unit = matrix.set(i,v)
+trait EJMLTensor extends Tensor with DenseTensor {
+  val ejml:SimpleMatrix
+  override protected def _initialArray: Array[Double] = ejml.getMatrix.getData
+  override def update(i: Int, v: Double): Unit = ejml.set(i,v)
   override def isDense: Boolean = true
-  override def zero(): Unit = matrix.zero()
-  override def apply(i: Int): Double = matrix.get(i)
-  override def *=(d: Double): Unit = CommonOps.scale(d,matrix.getMatrix)
-  override def oneNorm: Double = NormOps.fastNormP(matrix.getMatrix,1.0)
-  override def twoNormSquared: Double = { val f = matrix.normF(); f*f }
-  override def +=(i: Int, incr: Double): Unit = matrix.set(i, apply(i) + incr)
-  override def *=(i: Int, incr: Double): Unit = matrix.set(i, apply(i) * incr)
+  override def zero(): Unit = ejml.zero()
+  override def apply(i: Int): Double = ejml.get(i)
+  override def *=(d: Double): Unit = CommonOps.scale(d,ejml.getMatrix)
+  override def oneNorm: Double = NormOps.fastNormP(ejml.getMatrix,1.0)
+  override def twoNormSquared: Double = { val f = ejml.normF(); f*f }
+  override def +=(i: Int, incr: Double): Unit = ejml.set(i, apply(i) + incr)
+  override def *=(i: Int, incr: Double): Unit = ejml.set(i, apply(i) * incr)
   override def +=(ds: DoubleSeq, factor: Double): Unit = ds match {
     case ejml2:EJMLTensor =>
-      if(factor == 1.0) CommonOps.addEquals(matrix.getMatrix, ejml2.matrix.getMatrix)
-      else CommonOps.addEquals(matrix.getMatrix,factor,ejml2.matrix.getMatrix)
+      if(factor == 1.0) CommonOps.addEquals(ejml.getMatrix, ejml2.ejml.getMatrix)
+      else CommonOps.addEquals(ejml.getMatrix,factor,ejml2.ejml.getMatrix)
     case _ => ds.foreachActiveElement((i,v) => +=(i,v))
+  }
+  override def :=(ds: DoubleSeq): Unit = ds match {
+    case t: Tensor => zero(); +=(t)
+    case _ => super.:=(ds)
   }
   override def /=(ds: DoubleSeq): Unit = ds match {
     case ejml2:EJMLTensor =>
-      CommonOps.elementDiv(matrix.getMatrix, ejml2.matrix.getMatrix)
+      CommonOps.elementDiv(ejml.getMatrix, ejml2.ejml.getMatrix)
     case _ => super./=(ds)
   }
   override def *=(ds: DoubleSeq): Unit = ds match {
-    case ejml2:EJMLTensor => CommonOps.elementMult(matrix.getMatrix, ejml2.matrix.getMatrix)
+    case ejml2:EJMLTensor => CommonOps.elementMult(ejml.getMatrix, ejml2.ejml.getMatrix)
     case _ => ds.foreachActiveElement((i,v) => *=(i,v))
   }
-  override def +=(d: Double): Unit = CommonOps.add(matrix.getMatrix,d)
+  override def +=(d: Double): Unit = CommonOps.add(ejml.getMatrix,d)
   override def forallActiveElements(f: (Int, Double) => Boolean): Boolean = {
-    val a = matrix.getMatrix.iterator(true, 0, 0, matrix.numRows() - 1, matrix.numCols() - 1)
+    val a = ejml.getMatrix.iterator(true, 0, 0, ejml.numRows() - 1, ejml.numCols() - 1)
     var res = true
     while (res && a.hasNext) {
       val n = a.next()
@@ -46,64 +48,77 @@ trait EJMLTensor extends Tensor with DenseDoubleSeq {
   }
 }
 
-class EJMLTensor1(override val matrix:SimpleMatrix) extends EJMLTensor with Tensor1 {
-  assert(matrix.isVector)
+class EJMLTensor1(override val ejml:SimpleMatrix) extends EJMLTensor with DenseTensorLike1 {
+  assert(ejml.isVector)
   def this(dim1:Int) = this(new SimpleMatrix(dim1,1))
-  override def dim1: Int = matrix.numRows()
-  override def activeDomain: IntSeq = new RangeIntSeq(0,dim1)
-  override def activeDomainSize: Int = dim1
-
-  override def *(f: Double): Tensor1 = new EJMLTensor1(matrix.scale(f))
+  override def dim1: Int = ejml.numRows()
+  override def *(f: Double): Tensor1 = new EJMLTensor1(ejml.scale(f))
   override def +(t: Tensor1): Tensor1 = t match {
-    case ejml2:EJMLTensor1 => new EJMLTensor1(matrix.plus(ejml2.matrix))
+    case ejml2:EJMLTensor1 => new EJMLTensor1(ejml.plus(ejml2.ejml))
     case _:Tensor1 => val result = this.copy; t.foreachActiveElement((i,v) => result+=(i,v)); result
   }
   override def blankCopy: Tensor1 = new EJMLTensor1(dim1)
-  override def copy: Tensor1 = new EJMLTensor1(matrix.copy())
-  override def sum: Double = matrix.elementSum()
-  override def :=(ds: DoubleSeq): Unit = ds match {
-    case ejml: EJMLTensor1 => matrix.set(ejml.matrix)
-    case _ => super.:=(ds)
-  }
+  override def copy: Tensor1 = new EJMLTensor1(ejml.copy())
+  override def sum: Double = ejml.elementSum()
   override def outer(t: Tensor): Tensor = t match {
-    case t:EJMLTensor1 => val A = new EJMLTensor2(dim1,t.dim1); VectorVectorMult.outerProd(matrix.getMatrix,t.matrix.getMatrix,A.matrix.getMatrix); A
+    case t:EJMLTensor1 => 
+      val A = new EJMLTensor2(dim1,t.dim1)
+      VectorVectorMult.outerProd(ejml.getMatrix,t.ejml.getMatrix,A.ejml.getMatrix); A
     case _ => super.outer(t)
   }
   override def dot(ds: DoubleSeq): Double = ds match {
-    case ejml2:EJMLTensor1 => matrix.dot(ejml2.matrix)
-    case _ => var sum = 0.0; ds.foreachActiveElement((i,v) => sum+=matrix.get(i)*v);sum
+    case ejml2:EJMLTensor1 => ejml.dot(ejml2.ejml)
+    case _ => var sum = 0.0; ds.foreachActiveElement((i,v) => sum+=ejml.get(i)*v);sum
   }
 }
 
-class EJMLTensor2(override val matrix:SimpleMatrix) extends EJMLTensor with Tensor2 {
+class EJMLTensor2(override val ejml:SimpleMatrix) extends EJMLTensor with DenseTensorLike2 {
   def this(dim1:Int,dim2:Int) = this(new SimpleMatrix(dim1,dim2))
-  override def dim1: Int = matrix.numRows()
-  override def activeDomain2: IntSeq = new RangeIntSeq(0,dim2)
-  override def activeDomain1: IntSeq = new RangeIntSeq(0,dim1)
-  override def dim2: Int = matrix.numCols()
-  override def activeDomainSize: Int = dim1*dim2
-  override def activeDomain: IntSeq = new RangeIntSeq(0,dim1*dim2)
-  override def copy: Tensor2 = new EJMLTensor2(matrix.copy())
+  override def dim1: Int = ejml.numRows()
+  override def dim2: Int = ejml.numCols()
+  override def copy: Tensor2 = new EJMLTensor2(ejml.copy())
   override def blankCopy: Tensor2 = new EJMLTensor2(dim1,dim2)
-  override def +=(i: Int, j: Int, v: Double): Unit = matrix.set(i,j, apply(i,j) + v)
-  override def *(t: Tensor1): Tensor1 = t match {
-    case ejml1:EJMLTensor1 => new EJMLTensor1(matrix.mult(ejml1.matrix))
-    case _ => val res = new EJMLTensor1(dim1);  for(i <- 0 until dim1) { var sum = 0.0; t.foreachActiveElement((j,v) => sum+= apply(i,j)*v); res.update(i,sum)}; res
+  override def +=(i: Int, j: Int, v: Double): Unit = ejml.set(i,j, apply(i,j) + v)
+  override def *(t: Tensor1): Tensor1 = {
+    val res = new EJMLTensor1(dim1)
+    *(t,res)
+    res
   }
-  override def leftMultiply(t: Tensor1): Tensor1 = t match {
-    case ejml1:EJMLTensor1 => new EJMLTensor1(matrix.transpose().mult(ejml1.matrix))
-    case _ => val res = new EJMLTensor1(dim2);  for(j <- 0 until dim2) { var sum = 0.0; t.foreachActiveElement((i,v) => sum+= apply(i,j)*v); res.update(j,sum)}; res
+  override def *(t: Tensor1, result:Tensor1): Unit = (t,result) match {
+    case (t: EJMLTensor1, result: EJMLTensor1) =>
+      CommonOps.mult(ejml.getMatrix, t.ejml.getMatrix, result.ejml.getMatrix)
+    case _ =>
+      var i = 0
+      while (i < dim1) {
+        var sum = 0.0
+        t.foreachActiveElement((j, v) => sum += apply(i, j) * v)
+        result.update(i, sum)
+        i+=1
+      }
   }
-  override def diag: Tensor1 = new EJMLTensor1(matrix.extractDiag())
-  override def apply(i: Int, j: Int): Double = matrix.get(i, j)
-  override def sum: Double = matrix.elementSum()
-  override def :=(ds: DoubleSeq): Unit = ds match {
-    case ejml: EJMLTensor2 => matrix.getMatrix.set(ejml.matrix.getMatrix)
-    case _ => super.:=(ds)
+  override def leftMultiply(t: Tensor1): Tensor1 = {
+    val res = new EJMLTensor1(dim2)
+    leftMultiply(t,res)
+    res
   }
+  override def leftMultiply(t: Tensor1, result: Tensor1): Unit = (t,result) match  {
+    case (t:EJMLTensor1,res:EJMLTensor1) =>
+      CommonOps.mult(ejml.transpose().getMatrix, t.ejml.getMatrix, res.ejml.getMatrix)
+    case _ =>
+      var j = 0
+      while (j < dim2) {
+        var sum = 0.0
+        t.foreachActiveElement((i,v) => sum+= apply(i,j)*v)
+        result.update(j,sum)
+        j+=1
+      }
+  }
+  override def diag: Tensor1 = new EJMLTensor1(ejml.extractDiag())
+  override def apply(i: Int, j: Int): Double = ejml.get(i, j)
+  override def sum: Double = ejml.elementSum()
   override def dot(ds: DoubleSeq): Double = ds match {
-    case ejml2:EJMLTensor2 => matrix.elementMult(ejml2.matrix).elementSum()
-    case _ => var sum = 0.0; ds.foreachActiveElement((i,v) => sum+=matrix.get(i)*v);sum
+    case t:EJMLTensor2 => ejml.elementMult(t.ejml).elementSum()
+    case _ => var sum = 0.0; ds.foreachActiveElement((i,v) => sum+=ejml.get(i)*v);sum
   }
 }
 

@@ -1,6 +1,7 @@
 package cc.factorie.nn
 
 import cc.factorie.la.{Tensor, UniformTensor1, Tensor1}
+import cc.factorie.util.{IntSeq, DoubleSeq}
 
 import scala.collection.mutable
 import scala.util.Random
@@ -15,22 +16,21 @@ import scala.util.Random
  *
  */
 trait ActivationFunction {
-  def apply(l:NNLayer):Unit
+  def apply(l:NNUnit):Unit
   //transformations directly on input
-  def inputDerivative(l: NNLayer): Tensor1
+  def updateObjective(l: NNUnit): Unit
   def typ: String
 }
 
 case class DropOutActivation(activation:ActivationFunction,percentage:Double)(implicit rng:Random) extends BaseActivationFunction {
-  def apply(l: NNLayer): Unit = {
+  def apply(l: NNUnit): Unit = {
     val input = l.input
     activation.apply(l)
     l.value.foreachActiveElement((i,v) => if(rng.nextDouble() < percentage) {l.value.update(i, 0.0); input.update(i,0.0)})
   }
-  override def inputDerivative(l: NNLayer): Tensor1 = {
-    val t = activation.inputDerivative(l)
-    l.value.foreachActiveElement((i,v) => if(v == 0.0) t update (i, 0.0))
-    t
+  override def updateObjective(l: NNUnit): Unit = {
+    activation.updateObjective(l)
+    l.value.foreachActiveElement((i,v) => if(v == 0.0) l.objectiveGradient update (i, 0.0))
   }
 }
 
@@ -47,12 +47,14 @@ trait BaseActivationFunction extends ActivationFunction {
 
 object ActivationFunction {
   object Exp extends BaseActivationFunction {
-    def apply(l: NNLayer) = stabilizeInput(l.value, 1).exponentiate()
+    def apply(l: NNUnit) = stabilizeInput(l.value, 1).exponentiate()
 
-    def inputDerivative(l: NNLayer): Tensor1 = {
-      val c = l.input.copy; stabilizeInput(c, 1).exponentiate(); c
+    def updateObjective(l: NNUnit): Unit = {
+      val c = l.objectiveGradient
+      c.foreachElement((i,v) => c(i) = v * math.exp(l.input(i)))
     }
 
+    //copy from deeplearning4j
     /**
      * Ensures numerical stability.
      * Clips values of input such that
@@ -75,66 +77,70 @@ object ActivationFunction {
   }
 
   object HardTanh extends BaseActivationFunction {
-    def apply(l: NNLayer) = l.value.foreachActiveElement { case (i, value) =>
+    def apply(l: NNUnit) = l.value.foreachActiveElement { case (i, value) =>
       if(value > 1) l.value.update(i, 1.0)
       else if(value < -1) l.value.update(i, -1.0)
         else l.value.update(i, cc.factorie.maths.tanh(value))
     }
-    def inputDerivative(l: NNLayer): Tensor1 = {
-      val derivative = l.input.copy
-      derivative.foreachActiveElement { case (i, value) =>
-        if (value < -1) derivative.update(i, -1)
-        else if (value > 1) derivative.update(i, 1)
-        else derivative.update(i, 1 - math.pow(Math.tanh(value), 2))
+    def updateObjective(l: NNUnit): Unit = {
+      val grad = l.objectiveGradient
+      l.input.foreachActiveElement { case (i, v) =>
+        if (v < -1) grad.update(i, 0.0)
+        else if (v > 1) grad.update(i, 0.0)
+        else grad.update(i, (1 - math.pow(Math.tanh(v), 2)) * grad(i))
       }
-      derivative
     }
   }
 
   object Linear extends BaseActivationFunction {
-    def apply(l: NNLayer) = {}
-    def inputDerivative(l: NNLayer): Tensor1 = new UniformTensor1(l.input.length, 1.0)
+    def apply(l: NNUnit) = {}
+    def updateObjective(l: NNUnit): Unit = {}
   }
 
   object RectifiedLinear extends BaseActivationFunction {
-    def apply(l: NNLayer) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, math.max(0.0, value))}
-    def inputDerivative(l: NNLayer): Tensor1 = new UniformTensor1(l.input.length, 1.0)
+    def apply(l: NNUnit) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, math.max(0.0, value))}
+    def updateObjective(l: NNUnit): Unit = {
+      val grad = l.objectiveGradient
+      l.input.foreachActiveElement((i,v) => if(v <= 0.0) grad(i) = 0.0)
+    }
   }
 
   object Sigmoid extends BaseActivationFunction {
-    def apply(l: NNLayer) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, cc.factorie.maths.sigmoid(value))}
-    def inputDerivative(l: NNLayer): Tensor1 = {
-      val derivative = l.input.copy
-      derivative.foreachActiveElement { case (i, value) =>
-        val s = cc.factorie.maths.sigmoid(value)
-        derivative.update(i, s * (1.0 - s))
+    def apply(l: NNUnit) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, cc.factorie.maths.sigmoid(value))}
+    def updateObjective(l: NNUnit): Unit = {
+      val grad = l.objectiveGradient
+      l.value.foreachActiveElement { case (i, value) =>
+        grad.update(i, value * (1.0 - value) * grad(i))
       }
-      derivative
     }
   }
 
   object SoftMax extends BaseActivationFunction {
-    def apply(l: NNLayer) = l.value.expNormalize()
-    def inputDerivative(l: NNLayer): Tensor1 = {
-      throw new NotImplementedError("There is no direct calculation of of the Softmax derivative for each unit in separate")
+    def apply(l: NNUnit) = l.value.expNormalize()
+    def updateObjective(l: NNUnit): Unit = {
+      var sum = 0.0
+      l.value.foreachActiveElement((i,softmax_i) => {
+        sum += softmax_i * l.objectiveGradient(i)
+      })
+      l.value.foreachActiveElement((j,softmax_j) => {
+        l.objectiveGradient.update(j,softmax_j*(l.objectiveGradient(j)-sum))
+      })
     }
   }
 
   object Tanh extends BaseActivationFunction {
-    def apply(l: NNLayer) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, cc.factorie.maths.tanh(value))}
-    def inputDerivative(l: NNLayer): Tensor1 = {
-      val derivative = l.input.copy
-      derivative.foreachActiveElement { case (i, value) => derivative.update(i, 1 - math.pow(Math.tanh(value), 2)) }
-      derivative
+    def apply(l: NNUnit) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, cc.factorie.maths.tanh(value))}
+    def updateObjective(l: NNUnit): Unit = {
+      val grad = l.objectiveGradient
+      l.input.foreachActiveElement { case (i, value) => grad.update(i, grad(i) * (1 - math.pow(Math.tanh(value), 2))) }
     }
   }
 
   object Squared extends BaseActivationFunction {
-    def apply(l: NNLayer) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, value * value)}
-    def inputDerivative(l: NNLayer): Tensor1 = {
-      val derivative = l.input.copy
-      derivative *= 2.0
-      derivative
+    def apply(l: NNUnit) = l.value.foreachActiveElement { case (i, value) => l.value.update(i, value * value)}
+    def updateObjective(l: NNUnit): Unit = {
+      val grad = l.objectiveGradient
+      grad.foreachElement((i,v) => grad(i) = 2*l.input(i)*v)
     }
   }
 }

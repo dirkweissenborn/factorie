@@ -12,6 +12,7 @@
    limitations under the License. */
 package cc.factorie.la
 
+import cc.factorie.nn.TensorUtils
 import cc.factorie.util.{DoubleAccumulator, LocalDoubleAccumulator, Accumulator}
 import cc.factorie.model.{Weights, WeightsMap}
 
@@ -47,7 +48,7 @@ class SmartGradientAccumulator extends WeightsMapAccumulator {
       case ACCUMULATOR => map(key) += (t,d)
       case SINGLE_TENSOR =>
         val newTensor = map(key) match {
-          case t: Outer1Tensor2 if t.tensor1.isDense && t.tensor2.isDense => new DenseTensor2(t.dim1, t.dim2)
+          case t: Outer1Tensor2 if t.tensor1.isDense && t.tensor2.isDense => TensorUtils.newDense(t.dim1, t.dim2)
           case t: Tensor1 => new SparseIndexedTensor1(t.dim1)
           case t: Tensor2 => new SparseIndexedTensor2(t.dim1, t.dim2)
           case t: Tensor3 => new SparseIndexedTensor3(t.dim1, t.dim2, t.dim3)

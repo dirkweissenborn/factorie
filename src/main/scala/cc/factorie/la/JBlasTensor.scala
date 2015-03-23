@@ -1,10 +1,12 @@
 package cc.factorie.la
 
 import cc.factorie.util._
+import org.ejml.ops.CommonOps
 import org.jblas.DoubleMatrix
 
-trait JBlasTensor extends Tensor with DenseDoubleSeq {
+trait JBlasTensor extends Tensor with DenseTensor {
   def jblas:DoubleMatrix
+  override protected def _initialArray: Array[Double] = jblas.data
   override def forallActiveElements(f: (Int, Double) => Boolean): Boolean = {
     var i = 0
     var res = true
@@ -14,6 +16,7 @@ trait JBlasTensor extends Tensor with DenseDoubleSeq {
     }
     res
   }
+  override def zero(): Unit = jblas.muli(0.0)
   override def isDense: Boolean = true
   override def dot(ds: DoubleSeq): Double = ds match {
     case jblas2:JBlasTensor => jblas.dot(jblas2.jblas)
@@ -35,15 +38,15 @@ trait JBlasTensor extends Tensor with DenseDoubleSeq {
   override def *=(d: Double): Unit = jblas.muli(d)
   override def +=(d: Double): Unit = jblas.addi(d)
   override def :=(ds: DoubleSeq): Unit = ds match {
-    case jblas2:JBlasTensor => jblas.copy(jblas2.jblas)
-    case _ => ds.foreachActiveElement((i,v) => update(i,v))
+    case t: Tensor => zero(); +=(t)
+    case _ => super.:=(ds)
   }
 }
 
 //Use JBLAS if your tensors are very big
 //Use EJML for small matrices
 //Try not to mix different kinds of implementations... Use NNUtils.newDense-methods
-class JBlasTensor1(override val jblas:DoubleMatrix) extends JBlasTensor with Tensor1 {
+class JBlasTensor1(override val jblas:DoubleMatrix) extends JBlasTensor with DenseTensorLike1 {
   def this(array:Array[Double]) = this(new DoubleMatrix(array))
   def this(dim:Int) = this(new DoubleMatrix(dim))
   def this(dim:Int, f:Int=>Double) = this({
@@ -52,8 +55,6 @@ class JBlasTensor1(override val jblas:DoubleMatrix) extends JBlasTensor with Ten
     t
   })
   override def dim1: Int = jblas.length
-  override val activeDomain: IntSeq = new RangeIntSeq(0,dim1)
-  override val activeDomainSize: Int = dim1
   override def update(i: Int, v: Double): Unit = jblas.put(i,v)
 
   override def blankCopy: Tensor1 = new JBlasTensor1(dim1)
@@ -63,7 +64,6 @@ class JBlasTensor1(override val jblas:DoubleMatrix) extends JBlasTensor with Ten
     r
   }
   override def +=(i: Int, incr: Double): Unit = jblas.put(i,apply(i)+incr)
-  override def zero(): Unit = jblas.muli(0.0)
   override def apply(i: Int): Double = jblas.get(i)
   override def outer(t: Tensor): Tensor = t match {
     case t:Tensor1 =>
@@ -75,7 +75,7 @@ class JBlasTensor1(override val jblas:DoubleMatrix) extends JBlasTensor with Ten
 }
 
 //jblas counts row first, so it is a little different from factorie which counts columns first
-class JBlasTensor2(val jblas:DoubleMatrix) extends JBlasTensor with Tensor2 {
+class JBlasTensor2(val jblas:DoubleMatrix) extends JBlasTensor with DenseTensorLike2 {
   private def tfIdx(i:Int) = ((i/dim2)%dim1) + ((i%dim2)*dim1)
   def this(dim1:Int,dim2:Int, f:(Int,Int)=>Double) = this({
     val t = new DoubleMatrix(dim1,dim2)
@@ -85,13 +85,8 @@ class JBlasTensor2(val jblas:DoubleMatrix) extends JBlasTensor with Tensor2 {
   def this(dim1:Int,dim2:Int) = this(new DoubleMatrix(dim1,dim2))
   override def dim1: Int = jblas.rows
   override def dim2: Int = jblas.columns
-  override val activeDomain1: IntSeq = new RangeIntSeq(0,dim1)
-  override val activeDomain2: IntSeq = new RangeIntSeq(0,dim2)
   override def apply(i: Int): Double = jblas.get(tfIdx(i))
-  override def activeDomainSize: Int = dim1*dim2
   override def update(i: Int, v: Double): Unit = jblas.put(tfIdx(i),v)
-  override def activeDomain: IntSeq = new RangeIntSeq(0,dim1*dim2)
-  override def isDense: Boolean = true
   override def forallActiveElements(f: (Int, Double) => Boolean): Boolean = {
     var i = 0
     var res = true
@@ -102,35 +97,40 @@ class JBlasTensor2(val jblas:DoubleMatrix) extends JBlasTensor with Tensor2 {
     res
   }
   override def +=(i: Int, incr: Double): Unit = jblas.put(tfIdx(i),incr+apply(i))
-  override def zero(): Unit = jblas.muli(0.0)
-  override def leftMultiply(t: Tensor1): Tensor1 = t match {
-    case t:JBlasTensor1 =>
-      new JBlasTensor1(jblas.transpose().mmul(t.jblas))
+  override def leftMultiply(t: Tensor1): Tensor1 = {
+    val res = new JBlasTensor1(dim2)
+    leftMultiply(t,res)
+    res
+  }
+  override def leftMultiply(t: Tensor1, result: Tensor1): Unit = (t,result) match  {
+    case (t:JBlasTensor1,res:JBlasTensor1) =>
+      jblas.transpose().mmuli(t.jblas,res.jblas)
     case _ =>
-      val newT = new JBlasTensor1(dim2)
-      (0 until dim2).foreach(j => {
+      var j = 0
+      while (j < dim2) {
         var sum = 0.0
-        t.foreachActiveElement((i,v) => {
-          sum += jblas.get(i,j) * v
-        })
-        newT += (j,sum)
-      })
-      newT
+        t.foreachActiveElement((i,v) => sum+= apply(i,j)*v)
+        result.update(j,sum)
+        j+=1
+      }
   }
   override def apply(i: Int, j: Int): Double = jblas.get(i,j)
-  override def *(t: Tensor1): Tensor1 = t match {
-    case t:JBlasTensor1 =>
-      new JBlasTensor1(jblas.mmul(t.jblas))
+  override def *(t: Tensor1): Tensor1 = {
+    val res = new JBlasTensor1(dim1)
+    *(t,res)
+    res
+  }
+  override def *(t: Tensor1, res:Tensor1): Unit = (t,res) match {
+    case (t:JBlasTensor1,res:JBlasTensor1) =>
+      jblas.mmuli(t.jblas, res.jblas)
     case _ =>
-      val newT = new JBlasTensor1(dim1)
-      (0 until dim1).foreach(i => {
+      var i = 0
+      while (i < dim1) {
         var sum = 0.0
-        t.foreachActiveElement((j,v) => {
-          sum += jblas.get(i,j) * v
-        })
-        newT += (i,sum)
-      })
-      newT
+        t.foreachActiveElement((j, v) => sum += apply(i, j) * v)
+        res.update(i, sum)
+        i+=1
+      }
   }
   override def blankCopy: Tensor2 = new JBlasTensor2(dim1,dim2)
   override def copy: Tensor2 = {

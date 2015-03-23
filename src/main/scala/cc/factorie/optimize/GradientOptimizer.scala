@@ -52,7 +52,10 @@ trait GradientOptimizer {
 trait L2Regularization extends GradientOptimizer {
   var variance: Double = 1.0
   abstract override def step(weights: WeightsSet, gradient: WeightsMap, value: Double) {
-    gradient.keys.foreach(w => gradient(w) += (w.value, -1 / variance)) // only update existing gradients
-    super.step(weights, gradient, value - 0.5 / variance * (weights dot weights))
+    // only update existing gradients
+    gradient.keys.foreach(w => 
+      w.value.foreachActiveElement((i,v) => if(!v.isInfinite) gradient(w) += (i, -1 / variance*v)))
+    super.step(weights, gradient, value - 0.5 / variance * 
+      gradient.keys.foldLeft(0.0)((acc,w) => acc + (w.value dot w.value)))
   }
 }

@@ -59,6 +59,8 @@ trait Tensor1 extends Tensor {
   // def *(t: Tensor1): Double = this dot t
   //... or it could be Hadamard product
   def *(t: Tensor2): Tensor1 = t.leftMultiply(this)
+  //DW: This can be faster in some cases, because no tensor creation is required
+  def *(t: Tensor2, result:Tensor1): Unit = t.leftMultiply(this,result)
   @inline final def length: Int = dim1
   override def copy: Tensor1 = throw new Error("Method copy not defined on class "+getClass.getName)
   override def blankCopy: Tensor1 = throw new Error("Method blankCopy not defined on class "+getClass.getName)

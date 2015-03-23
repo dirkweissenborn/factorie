@@ -29,10 +29,10 @@ class TestFeedForwardNeuralNetwork extends FlatSpec {
   "Gradient checks" should "not fail for a basic feed forward neural network" in {
     val model = new BasicFeedForwardNN(Array((2,ActivationFunction.Tanh),(10,ActivationFunction.Sigmoid),(1,ActivationFunction.Sigmoid)))
     val nets = Seq(
-      model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => 1.0)),
-      model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => -1.0)),
-      model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => -1.0)),
-      model.createNetwork(NNUtils.fillDense(2)(_ => Random.nextDouble()-0.5),NNUtils.fillDense(1)(_ => 1.0)))
+      model.createNetwork(TensorUtils.fillDense(2)(_ => Random.nextDouble()-0.5),TensorUtils.fillDense(1)(_ => 1.0)),
+      model.createNetwork(TensorUtils.fillDense(2)(_ => Random.nextDouble()-0.5),TensorUtils.fillDense(1)(_ => -1.0)),
+      model.createNetwork(TensorUtils.fillDense(2)(_ => Random.nextDouble()-0.5),TensorUtils.fillDense(1)(_ => -1.0)),
+      model.createNetwork(TensorUtils.fillDense(2)(_ => Random.nextDouble()-0.5),TensorUtils.fillDense(1)(_ => 1.0)))
 
     val examples = nets.map(net => new model.BackPropagationExample(net))
     assert(examples.forall(_.checkGradient()))
@@ -69,15 +69,15 @@ class TestFeedForwardNeuralNetwork extends FlatSpec {
     assert(example3.checkGradient())*/
   }
   it should "not fail on a simple sentiment RNN with JBLAS either" in {
-    NNUtils.setTensorImplementation(NNUtils.JBLAS)
+    TensorUtils.setTensorImplementation(TensorUtils.JBLAS)
     val sentiModel = new SentimentRNN(10,tokenDomain,withTensors = false)
     sentiModel.objectiveF = OptimizableObjectives.squaredMultivariate
     val network = sentiModel.createNetwork(pt)
     val example = new sentiModel.BackPropagationExample(network)
-    //assert(example.checkGradient())
+    assert(example.checkGradient())
   }
   it should "not fail on a sentiment tensor RNN with JBLAS either" in {
-    NNUtils.setTensorImplementation(NNUtils.JBLAS)
+    TensorUtils.setTensorImplementation(TensorUtils.JBLAS)
     val sentiModel = new SentimentRNN(2,tokenDomain)
     sentiModel.objectiveF = OptimizableObjectives.squaredMultivariate
     val network = sentiModel.createNetwork(pt)
@@ -85,6 +85,23 @@ class TestFeedForwardNeuralNetwork extends FlatSpec {
     assert(example.checkGradient())
   }
 
+  it should "not fail on a simple sentiment RNN with EJML either" in {
+    TensorUtils.setTensorImplementation(TensorUtils.JBLAS)
+    val sentiModel = new SentimentRNN(10,tokenDomain,withTensors = false)
+    sentiModel.objectiveF = OptimizableObjectives.squaredMultivariate
+    val network = sentiModel.createNetwork(pt)
+    val example = new sentiModel.BackPropagationExample(network)
+    assert(example.checkGradient())
+  }
+  
+  it should "not fail on a sentiment tensor RNN with EJML either" in {
+    TensorUtils.setTensorImplementation(TensorUtils.JBLAS)
+    val sentiModel = new SentimentRNN(2,tokenDomain)
+    sentiModel.objectiveF = OptimizableObjectives.squaredMultivariate
+    val network = sentiModel.createNetwork(pt)
+    val example = new sentiModel.BackPropagationExample(network)
+    assert(example.checkGradient())
+  }
   /*it should "not fail on a tensor sentiment RNN either" {
 
   }*/

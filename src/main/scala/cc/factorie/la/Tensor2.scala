@@ -13,6 +13,7 @@
 
 package cc.factorie.la
 
+import cc.factorie.nn.TensorUtils
 import cc.factorie.util._
 
 trait Tensor2 extends Tensor {
@@ -46,9 +47,16 @@ trait Tensor2 extends Tensor {
   def +=(i:Int, j:Int, v:Double): Unit = +=(singleIndex(i, j), v)
 
   def *(t: Tensor1): Tensor1 = {
+    val newT = TensorUtils.newDense(dim1)
+    *(t,newT)
+    newT
+  }
+
+  def *(t: Tensor1,result:Tensor1): Unit = {
     assert(dim2 == t.dim1, "Dimensions don't match: " + dim2 + " " + t.dim1)
-    val newT = new DenseTensor1(dim1)
-    val newArray = newT.asArray
+    assert(dim1 == result.dim1, "Dimensions don't match: " + dim1 + " " + result.dim1)
+    result.zero()
+    val newArray = result.asArray
     t match {
       case t: DenseTensor =>
         val tArr = t.asArray
@@ -82,14 +90,14 @@ trait Tensor2 extends Tensor {
       case _ =>
         throw new Error("tensor type neither dense nor sparse: " + t.getClass.getName)
     }
-    newT
   }
 
-  def leftMultiply(t: Tensor1): Tensor1 = {
+  def leftMultiply(t: Tensor1,result:Tensor1): Unit = {
     assert(dim1 == t.dim1, "Dimensions don't match: " + dim1 + " " + t.dim1)
+    assert(dim2 == result.dim1, "Dimensions don't match: " + dim2 + " " + result.dim1)
+    result.zero()
     val myDim2 = dim2
-    val newT = new DenseTensor1(dim2)
-    val newArray = newT.asArray
+    val newArray = result.asArray
     t match {
       case t: DenseTensor =>
         val tArr = t.asArray
@@ -137,6 +145,11 @@ trait Tensor2 extends Tensor {
       case _ =>
         throw new Error("tensor type neither dense nor sparse: " + t.getClass.getName)
     }
+  }
+
+  def leftMultiply(t: Tensor1): Tensor1 = {
+    val newT = TensorUtils.newDense(dim2)
+    leftMultiply(t,newT)
     newT
   }
 

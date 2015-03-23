@@ -5,40 +5,42 @@ import java.io.File
 import cc.factorie.la._
 import cc.factorie.model._
 import cc.factorie.nn._
+import cc.factorie.nn.weights._
 import cc.factorie.optimize._
 import cc.factorie.util.FastLogging
 import cc.factorie.variable.CategoricalDomain
 import scala.util.Random
 
-class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:Boolean = true, val numLabels:Int = 5, activation:ActivationFunction = ActivationFunction.Tanh) extends FeedForwardNNModel {
+class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:Boolean = true, val numLabels:Int = 5,
+                   activation:ActivationFunction = ActivationFunction.HardTanh) extends FeedForwardNNModel {
   assert(tokenDomain.frozen)
 
-  private val rand = new Random(Random.nextInt())
+  private val rand = new Random(6393854)
 
   // #### First define layers of this network, input and output ####
   override type Output = Any //included in input
   override type Input = SentimentPTree
   var objectiveF = labelToTensorObjective(OptimizableObjectives.hingeMulticlass)
 
-  case class OutputLayer(label:Int, inputLayer:Layer) extends BasicOutputNNLayer({val t = NNUtils.newDense(numLabels);t.+=(label,1.0);t},objectiveFunction = objectiveF) with LabeledNNLayer {
+  case class OutputUnit(label:Int, inputLayer:Unit) extends BasicOutputNNUnit({val t = TensorUtils.newDense(numLabels);t.+=(label,1.0);t},objectiveFunction = objectiveF) with LabeledNNUnit {
     override def toString: String = s"Sentiment: $label"
-    override val target = new BasicTargetNNLayer(new SingletonTensor1(numLabels,label,1.0), this)
+    override val target = new BasicTargetNNUnit(new SingletonTensor1(numLabels,label,1.0), this)
     newConnection(outBias,this)
   }
-  case class InputLayer(token:String) extends OneHotNNLayer(new SingletonBinaryTensor1(tokenDomain.size, tokenDomain.index(token))) {
+  case class InputUnit(token:String) extends OneHotNNUnit(new SingletonBinaryTensor1(tokenDomain.size, tokenDomain.index(token))) {
     override def toString: String = token
   }
-  case class Layer(node:SentimentPNode, childLayer1:Layer = null, childLayer2:Layer = null, isRoot:Boolean = false)
-    extends BasicNNLayer(dim, activation) {
+  case class Unit(node:SentimentPNode, childLayer1:Unit = null, childLayer2:Unit = null, isRoot:Boolean = false)
+    extends BasicNNUnit(dim, activation) {
 
     if(childLayer1 != null) {
       newConnection(childWeights1,childLayer1,this)
       newConnection(childWeights2,childLayer2,this)
       if(withTensors) newConnection(tensorWeights,childLayer1,childLayer2,this)
     }
-    val output = OutputLayer(node.score,this)
+    val output = OutputUnit(node.score,this)
     newConnection(outputWeights, this, output)
-    val inputLayer:InputLayer = if(node.label!="") InputLayer(node.label) else null
+    val inputLayer:InputUnit = if(node.label!="") InputUnit(node.label) else null
     if(inputLayer != null) newConnection(embeddings,inputLayer,this)
     newConnection(bias,this)
 
@@ -48,27 +50,27 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
     override def toString: String = treeString
   }
   //define weight families
-  val childWeights1 = new BasicLayerToLayerWeights[Layer,Layer] {
-    override lazy val weights: Weights2 = Weights(NNUtils.fillDense(dim,dim)((i,j) => { if(i==j)1.0 else 0.0 }+(rand.nextDouble()-0.5)/math.sqrt(dim)))
+  val childWeights1 = new FullConnection[Unit,Unit] {
+    override lazy val weights: Weights2 = Weights(TensorUtils.fillDense(dim,dim)((i,j) => { if(i==j)1.0 else 0.0 }+(rand.nextDouble()-0.5)/math.sqrt(dim)))
   }
-  val childWeights2 = new BasicLayerToLayerWeights[Layer,Layer] {
-    override lazy val weights: Weights2 = Weights(NNUtils.fillDense(dim,dim)((i,j) => { if(i==j)1.0 else 0.0 }+(rand.nextDouble()-0.5)/math.sqrt(dim)))
+  val childWeights2 = new FullConnection[Unit,Unit] {
+    override lazy val weights: Weights2 = Weights(TensorUtils.fillDense(dim,dim)((i,j) => { if(i==j)1.0 else 0.0 }+(rand.nextDouble()-0.5)/math.sqrt(dim)))
   }
-  val tensorWeights = new NeuralTensorWeights[Layer,Layer,Layer] {
-    override lazy val weights: Weights3 = Weights(NNUtils.fillDense(dim,dim,dim)((i,j,k) => (rand.nextDouble()-0.5)/(2*dim)))
+  val tensorWeights = new NeuralTensorConnection[Unit,Unit,Unit] {
+    override lazy val weights: Weights3 = Weights(TensorUtils.fillDense(dim,dim,dim)((i,j,k) => (rand.nextDouble()-0.5)/(2*dim)))
   }
-  val bias = new Bias[Layer] {
-    override lazy val weights: Weights1 = Weights(NNUtils.newDense(dim))
+  val bias = new Bias[Unit] {
+    override lazy val weights: Weights1 = Weights(TensorUtils.newDense(dim))
   }
-  val outBias = new Bias[OutputLayer] {
-    override lazy val weights: Weights1 = Weights(NNUtils.newDense(numLabels))
+  val outBias = new Bias[OutputUnit] {
+    override lazy val weights: Weights1 = Weights(TensorUtils.newDense(numLabels))
   }
-  val outputWeights = new BasicLayerToLayerWeights[Layer,OutputLayer] {
-    override lazy val weights: Weights2 = Weights(NNUtils.fillDense(dim,numLabels)((_,_) => 2.0*(rand.nextDouble()-0.5)/math.sqrt(dim)))
+  val outputWeights = new FullConnection[Unit,OutputUnit] {
+    override lazy val weights: Weights2 = Weights(TensorUtils.fillDense(dim,numLabels)((_,_) => 2.0*(rand.nextDouble()-0.5)/math.sqrt(dim)))
   }
-  val embeddings = new BasicLayerToLayerWeights[OneHotNNLayer, Layer] {
+  val embeddings = new FullConnection[OneHotNNUnit, Unit] {
     //override lazy val weights: Weights2 = Weights(new RowVectorMatrix(tokenDomain.size,dim, d => NNUtils.fillDense(d)(_ => rand.nextGaussian())).init())
-    override lazy val weights: Weights2 = Weights(NNUtils.fillDense(tokenDomain.size,dim)((_,_) => rand.nextDouble()/10000.0)) //faster than above
+    override lazy val weights: Weights2 = Weights(TensorUtils.fillDense(tokenDomain.size,dim)((_,_) => rand.nextDouble()/10000.0)) //faster than above
   }
 
   //Now define how to create a network given the input
@@ -76,10 +78,10 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
   override def createNetwork(input: Input, output: Output = None) = createNetwork(input)
 
   override def createNetwork(input: Input) = {
-    val layers = new Array[Layer](input.nodes.length)
+    val layers = new Array[Unit](input.nodes.length)
     input.nodes.foreach(n => {
       val isRoot = n ==  input.nodes.last
-      val layer = if(n.label!="") new Layer(n,isRoot=isRoot) else Layer(n,layers(n.c1),layers(n.c2),isRoot)
+      val layer = if(n.label!="") new Unit(n,isRoot=isRoot) else Unit(n,layers(n.c1),layers(n.c2),isRoot)
       layers(n.id) = layer
     })
     new Network(layers.withFilter(_.inputLayer != null).map(_.inputLayer),layers.map(_.output))
@@ -89,13 +91,13 @@ class SentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:B
 class TernarySentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTensors:Boolean = true, activation:ActivationFunction = ActivationFunction.Tanh)
   extends SentimentRNN(dim,tokenDomain,withTensors, 3,activation) {
   override def createNetwork(input: Input) = {
-    val layers = new Array[Layer](input.nodes.length)
+    val layers = new Array[Unit](input.nodes.length)
     input.nodes.foreach(n => {
       if(n.score > 2) n.score = 2
       else if(n.score == 2) n.score = 1
       else if(n.score < 2) n.score = 0
       val isRoot = n ==  input.nodes.last
-      val layer = if(n.label!="") new Layer(n,isRoot=isRoot) else Layer(n,layers(n.c1),layers(n.c2),isRoot)
+      val layer = if(n.label!="") new Unit(n,isRoot=isRoot) else Unit(n,layers(n.c1),layers(n.c2),isRoot)
       layers(n.id) = layer
     })
     new Network(layers.withFilter(_.inputLayer != null).map(_.inputLayer),layers.map(_.output))
@@ -104,7 +106,7 @@ class TernarySentimentRNN(dim:Int, tokenDomain:CategoricalDomain[String], withTe
 
 object SentimentRNN extends FastLogging {
   def train(train:File,test:File,dev:File) {
-    NNUtils.setTensorImplementation(NNUtils.EJML)
+    TensorUtils.setTensorImplementation(TensorUtils.JBLAS)
     val batchSize = 27
 
     val trainTrees = LoadPTB.sentimentPTBFromFile(train).toList
@@ -134,14 +136,14 @@ object SentimentRNN extends FastLogging {
 
     val zeroLabel = model.numLabels/2
     def printEvaluation(examples:Seq[model.Network], name:String) {
-      val size = examples.view.map(_.outputLayers.size).sum.toDouble
+      val size = examples.view.map(_.outputUnits.size).sum.toDouble
       val objective = examples.view.map(e => e.totalObjective).sum / size
       var binaryAll = 0.0
       var binaryAllTotal = 0.0
       var binaryRoot = 0.0
       var binaryRootTotal = 0.0
 
-      val fineGrainedAll = examples.view.map(_.outputLayers.count(o => {
+      val fineGrainedAll = examples.view.map(_.outputUnits.count(o => {
         val t = o.target.value.maxIndex
         val a = o.value.maxIndex
         if(t != zeroLabel) binaryAllTotal+=1
@@ -151,7 +153,7 @@ object SentimentRNN extends FastLogging {
       })).sum / size
 
       val fineGrainedRoot = examples.count(e => {
-        val r = e.outputLayers.find(o => o.inputLayer.isRoot).get
+        val r = e.outputUnits.find(o => o.inputLayer.isRoot).get
         val t = r.target.value.maxIndex
         val a = r.value.maxIndex
         if(t != zeroLabel) binaryRootTotal+=1

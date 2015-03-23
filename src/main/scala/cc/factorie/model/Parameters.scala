@@ -50,19 +50,19 @@ class WeightsSet extends TensorSet {
   // Weights are created here to ensure that they are immediately associate with one and only one WeightsSet.
   def newWeights(ctor: => Tensor): Weights = new Weights with ConcreteWeights {
     type Value = Tensor
-    def newBlankTensor = ctor
+    def initialValue = ctor
   }
-  def newWeights(ctor: => Tensor1): Weights1 = new Weights1 with ConcreteWeights { def newBlankTensor = ctor }
-  def newWeights(ctor: => Tensor2): Weights2 = new Weights2 with ConcreteWeights { def newBlankTensor = ctor }
-  def newWeights(ctor: => Tensor3): Weights3 = new Weights3 with ConcreteWeights { def newBlankTensor = ctor }
-  def newWeights(ctor: => Tensor4): Weights4 = new Weights4 with ConcreteWeights { def newBlankTensor = ctor }
+  def newWeights(ctor: => Tensor1): Weights1 = new Weights1 with ConcreteWeights { def initialValue = ctor }
+  def newWeights(ctor: => Tensor2): Weights2 = new Weights2 with ConcreteWeights { def initialValue = ctor }
+  def newWeights(ctor: => Tensor3): Weights3 = new Weights3 with ConcreteWeights { def initialValue = ctor }
+  def newWeights(ctor: => Tensor4): Weights4 = new Weights4 with ConcreteWeights { def initialValue = ctor }
 
   override def -(other: TensorSet): WeightsMap = { val newT = copy; newT += (other, -1); newT }
 
   private trait ConcreteWeights extends Weights {
     _keys.append(this)
     private var _value: Value = null.asInstanceOf[Value]
-    def value = { if (_value eq null) { _value = newBlankTensor }; _value }
+    def value = { if (_value eq null) { _value = initialValue }; _value }
     def set(t: Tensor): Unit = _value = t.asInstanceOf[Value] // TODO I'd love to be able to avoid this cast. -akm
   }
   
@@ -144,7 +144,8 @@ trait TensorSet {
 
 /** A TensorVar that is also used as a key in a TensorSet. */
 trait Weights extends TensorVar {
-  def newBlankTensor: Value
+  def newBlankTensor: Value = value.blankCopy.asInstanceOf[Value]
+  def initialValue: Value
   def value: Value
   def set(t: Tensor): Unit
   //def domain = TensorDomain

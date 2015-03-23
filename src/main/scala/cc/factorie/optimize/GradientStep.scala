@@ -171,6 +171,10 @@ trait AdaptiveLearningRate extends GradientStep {
     }
     for (template <- gradient.keys)
       (gradient(template), HSq(template)) match {
+        case (g: JBlasTensor,  hSq: JBlasTensor) =>
+          val (g_j,h_j) = (g.jblas,hSq.jblas)
+          h_j.addi(MatrixFunctions.pow(g_j,2.0))
+          g_j.muli(eta).divi(MatrixFunctions.sqrt(h_j).addi(delta))
         case (g: DenseTensor, hSq: DenseTensor) =>
 //          println(hSq)
           val gArr = g.asArray
@@ -227,10 +231,6 @@ trait AdaptiveLearningRate extends GradientStep {
             }
             i += 1
           }
-        case (g: JBlasTensor,  hSq: JBlasTensor) =>
-          val (g_j,h_j) = (g.jblas,hSq.jblas)
-          h_j.addi(MatrixFunctions.pow(g_j,2.0))
-          g_j.muli(eta).divi(MatrixFunctions.sqrt(h_j).addi(delta))
         //the general case
         case (g: Tensor,  hSq: Tensor) =>
           val update = g.copy

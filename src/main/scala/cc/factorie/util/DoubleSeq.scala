@@ -32,7 +32,7 @@ trait DoubleSeq {
   def foreach(f:(Double)=>Unit): Unit = foreachElement((i, v) => f(v))
   def foreachElement(f:(Int,Double)=>Unit): Unit  = { val l = length; var i = 0; while (i < l) { f(i, apply(i)); i += 1 } }
   def forallElements(f:(Int,Double)=>Boolean): Boolean = { val l = length; var i = 0; while (i < l) { if (!f(i, apply(i))) return false; i += 1 }; true }
-  def forall(f:Double=>Boolean): Boolean = { val l = length; var i = 0; while (i < l) { if (!f(apply(i))) { println("DoubleSeq.forall "+apply(i)); return false }; i += 1 }; true }
+  def forall(f:Double=>Boolean): Boolean = { val l = length; var i = 0; while (i < l) { if (!f(apply(i))) return false; i += 1 }; true }
   def map(f:(Double)=>Double): DoubleSeq = { val l = length; val a = new Array[Double](l); var i = 0; while (i < l) { a(i) = f(apply(i)); i += 1 }; new ArrayDoubleSeq(a) }
   def filter(f:(Double)=>Boolean): DoubleSeq = { val l = length; val r = new DoubleArrayBuffer; var i = 0; while (i < l) { val a = apply(i); if (f(a)) r += a; i += 1 }; r }
   def contains(d:Double): Boolean
